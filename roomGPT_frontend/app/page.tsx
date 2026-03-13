@@ -1,65 +1,167 @@
-import Image from "next/image";
+"use client";
+
+import { motion } from "framer-motion";
 import Link from "next/link";
+import { useState } from "react";
 import Footer from "../components/Footer";
 import Header from "../components/Header";
+import LumiereIntro from "../components/LumiereIntro";
+import PairedCarousel, { PairedSlide } from "../components/PairedCarousel";
 import SquigglyLines from "../components/SquigglyLines";
 
+const pairedSlides: PairedSlide[] = [
+  {
+    beforeSrc: "/pic/pic1_before.png",
+    afterSrc: "/pic/pic1_after.png",
+    beforeAlt: "原始房间示例图 1",
+    afterAlt: "生成后的房间示例图 1",
+  },
+  {
+    beforeSrc: "/pic/pic2_before.png",
+    afterSrc: "/pic/pic2_after.png",
+    beforeAlt: "原始房间示例图 2",
+    afterAlt: "生成后的房间示例图 2",
+  },
+  {
+    beforeSrc: "/pic/pic3_before.png",
+    afterSrc: "/pic/pic3_after.png",
+    beforeAlt: "原始房间示例图 3",
+    afterAlt: "生成后的房间示例图 3",
+  },
+  {
+    beforeSrc: "/pic/pic4_before.png",
+    afterSrc: "/pic/pic4_after.png",
+    beforeAlt: "原始房间示例图 4",
+    afterAlt: "生成后的房间示例图 4",
+  },
+  {
+    beforeSrc: "/pic/pic5_before.png",
+    afterSrc: "/pic/pic5_after.png",
+    beforeAlt: "原始房间示例图 5",
+    afterAlt: "生成后的房间示例图 5",
+  },
+  {
+    beforeSrc: "/pic/pic6_before.png",
+    afterSrc: "/pic/pic6_after.png",
+    beforeAlt: "原始房间示例图 6",
+    afterAlt: "生成后的房间示例图 6",
+  },
+  {
+    beforeSrc: "/pic/pic7_before.png",
+    afterSrc: "/pic/pic7_after.png",
+    beforeAlt: "原始房间示例图 7",
+    afterAlt: "生成后的房间示例图 7",
+  },
+];
+
+const introCards = [
+  {
+    title: "项目初衷",
+    content:
+      "把装修灵感从“想象”变成“可视化决策”。通过上传真实房间照片，快速看到改造方向，减少试错成本。",
+  },
+  {
+    title: "如何驱动",
+    content:
+      "系统采用多智能体协作：视觉评估理解现状，设计规划输出方案，项目协调整合成可执行建议与效果图。",
+  },
+  {
+    title: "你能获得什么",
+    content:
+      "不仅有对比效果图，还能获得更清晰的改造路径、风格选择依据，以及面向实际落地的装修思路。",
+  },
+];
+
 export default function HomePage() {
+  const [showIntro, setShowIntro] = useState(true);
+
   return (
-    <div className="flex max-w-6xl mx-auto flex-col items-center justify-center py-2 min-h-screen">
+    <div className="home-cinematic relative mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center overflow-hidden py-2">
+      {showIntro && <LumiereIntro onComplete={() => setShowIntro(false)} />}
       <Header />
-      <main className="flex flex-1 w-full flex-col items-center justify-center text-center px-4 sm:mt-20 mt-20 background-gradient">
-        <a
-          href="https://vercel.fyi/roomGPT"
-          target="_blank"
-          rel="noreferrer"
-          className="border border-gray-700 rounded-lg py-2 px-4 text-gray-400 text-sm mb-5 transition duration-300 ease-in-out"
+      <main className="background-gradient relative mt-10 flex w-full flex-1 flex-col items-center justify-center px-4 text-center sm:mt-12">
+        <motion.h1
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.75 }}
+          className="mx-auto max-w-5xl font-display text-4xl font-bold tracking-tight text-gray-100 sm:text-7xl"
         >
-          一键克隆并部署到{" "}
-          <span className="text-blue-600">Vercel</span>
-        </a>
-        <h1 className="mx-auto max-w-4xl font-display text-5xl font-bold tracking-normal text-gray-300 sm:text-7xl">
           为每个人生成{" "}
-          <span className="relative whitespace-nowrap text-blue-600">
+          <span className="relative whitespace-nowrap text-blue-400">
             <SquigglyLines />
             <span className="relative">梦想中的房间</span>
           </span>
-        </h1>
-        <h2 className="mx-auto mt-12 max-w-xl text-lg sm:text-gray-400  text-gray-500 leading-7">
-          拍摄一张您房间的照片，看看它在不同设计风格下的样子。100% 免费 —— 今天就开启您的房间改造之旅。
-        </h2>
-        <Link
-          className="bg-blue-600 rounded-xl text-white font-medium px-4 py-3 sm:mt-10 mt-8 hover:bg-blue-500 transition"
-          href="/dream"
+        </motion.h1>
+
+        <motion.h2
+          initial={{ opacity: 0, y: 22 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.08 }}
+          className="mx-auto mt-7 max-w-3xl text-base leading-8 text-slate-300 sm:mt-10 sm:text-2xl"
         >
-          生成您的梦想房间
-        </Link>
-        <div className="flex justify-between items-center w-full flex-col sm:mt-10 mt-6">
-          <div className="flex flex-col space-y-10 mt-4 mb-16">
-            <div className="flex sm:space-x-8 sm:flex-row flex-col">
-              <div>
-                <h3 className="mb-1 font-medium text-lg">原始房间</h3>
-                <Image
-                  alt="原始房间示例图"
-                  src="/original-pic.jpg"
-                  className="w-full object-cover h-96 rounded-2xl"
-                  width={400}
-                  height={400}
-                />
-              </div>
-              <div className="sm:mt-0 mt-8">
-                <h3 className="mb-1 font-medium text-lg">生成后的房间</h3>
-                <Image
-                  alt="生成后的房间示例图"
-                  width={400}
-                  height={400}
-                  src="/generated-pic-2.jpg"
-                  className="w-full object-cover h-96 rounded-2xl sm:mt-0 mt-2"
-                />
-              </div>
+          上传真实房间照片，体验更有沉浸感的 AI 改造预览。先看效果，再做决策，让装修方案更有把握。
+        </motion.h2>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.16 }}
+        >
+          <Link
+            className="mt-8 inline-flex rounded-2xl bg-blue-600 px-6 py-3 text-lg font-semibold text-white shadow-[0_16px_48px_rgba(37,99,235,0.55)] transition hover:-translate-y-0.5 hover:bg-blue-500"
+            href="/dream"
+          >
+            生成您的梦想房间
+          </Link>
+        </motion.div>
+
+        <motion.section
+          initial={{ opacity: 0, y: 26 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.75, delay: 0.24 }}
+          className="mt-10 w-full sm:mt-14"
+        >
+          <PairedCarousel pairs={pairedSlides} interval={3400} />
+        </motion.section>
+
+        <section className="mt-12 w-full pb-10 sm:mt-16 sm:pb-16">
+          <div className="mx-auto max-w-5xl text-left">
+            <motion.h3
+              initial={{ opacity: 0, y: 18 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.4 }}
+              transition={{ duration: 0.55 }}
+              className="text-center text-2xl font-semibold text-gray-100 sm:text-3xl"
+            >
+              关于这个项目
+            </motion.h3>
+            <motion.p
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.3 }}
+              transition={{ duration: 0.55, delay: 0.08 }}
+              className="mx-auto mt-4 max-w-3xl text-center text-base leading-7 text-gray-300 sm:text-lg"
+            >
+              我们希望把装修沟通变成“看得见、说得清、能落地”的过程，因此你会在同一页面看到灵感、效果和解释。
+            </motion.p>
+
+            <div className="mt-7 grid grid-cols-1 gap-4 sm:mt-10 md:grid-cols-3">
+              {introCards.map((card, index) => (
+                <motion.article
+                  key={card.title}
+                  initial={{ opacity: 0, y: 18 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.2 }}
+                  transition={{ duration: 0.5, delay: 0.1 * index }}
+                  className="intro-zoom-card rounded-2xl border border-white/15 bg-white/[0.04] p-5 shadow-[0_14px_42px_rgba(0,0,0,0.3)] backdrop-blur-sm transition hover:border-blue-400/45 hover:bg-white/[0.08]"
+                >
+                  <h4 className="text-lg font-semibold text-blue-300">{card.title}</h4>
+                  <p className="mt-3 text-sm leading-7 text-gray-200">{card.content}</p>
+                </motion.article>
+              ))}
             </div>
           </div>
-        </div>
+        </section>
       </main>
       <Footer />
     </div>
