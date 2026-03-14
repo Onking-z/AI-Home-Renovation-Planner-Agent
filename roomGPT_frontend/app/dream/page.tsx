@@ -234,19 +234,6 @@ export default function DreamPage() {
                         )}
                       </div>
                     </div>
-                        <ChatInterface
-                          onError={setError}
-                        />
-                        {error && (
-                          <div
-                            className="bg-red-500/20 border border-red-400/50 text-red-200 px-4 py-3 rounded-xl mt-4 backdrop-blur-sm"
-                            role="alert"
-                          >
-                            <span className="block sm:inline">{error}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </motion.div>
                 ) : (
                   // 快速生成模式
