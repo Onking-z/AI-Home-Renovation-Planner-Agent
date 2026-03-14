@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import { useState, useRef } from "react";
 import Link from "next/link";
+import { Dancing_Script } from "next/font/google";
 import { CompareSlider } from "../../components/CompareSlider";
 import Footer from "../../components/Footer";
 import Header from "../../components/Header";
@@ -18,6 +19,14 @@ import appendNewToName from "../../utils/appendNewToName";
 import downloadPhoto from "../../utils/downloadPhoto";
 import DropDown from "../../components/DropDown";
 import { roomLabels, roomType, rooms, themeLabels, themeType, themes } from "../../utils/dropdownTypes";
+
+// 加载手写字体
+const dancingScript = Dancing_Script({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-dancing",
+});
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 const API_URL = `${API_BASE_URL}/api/chat-with-image`;
@@ -136,7 +145,16 @@ export default function DreamPage() {
         >
           <div className="flex items-center justify-between w-full mb-5">
             <h1 className="font-display text-4xl font-bold tracking-normal text-[#2D2D2D] sm:text-6xl">
-              设计你的 <span className="text-[#8B6F47]">理想空间</span>
+              设计你的{" "}
+              <span
+                className={`${dancingScript.className} text-[#8B6F47] text-5xl sm:text-7xl font-semibold italic`}
+                style={{
+                  textShadow: '2px 2px 4px rgba(139, 111, 71, 0.15)',
+                  letterSpacing: '0.02em'
+                }}
+              >
+                理想空间
+              </span>
             </h1>
             <Link
               href="/"
