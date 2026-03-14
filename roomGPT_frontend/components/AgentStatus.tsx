@@ -42,9 +42,9 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
   const processingCount = agents.filter(a => a.status === 'processing').length;
 
   return (
-    <div className="w-full bg-white/5 backdrop-blur-md rounded-2xl mb-4 border border-white/10 shadow-lg">
+    <div className="w-full bg-white/55 backdrop-blur-md rounded-2xl mb-4 border border-[#8B6F47]/20 shadow-lg">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white/90 mb-3 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-[#2D2D2D] mb-3 flex items-center gap-2">
           <span>🤖</span>
           <span>AI 智能体协作状态</span>
           {processingCount > 0 && (
@@ -57,7 +57,7 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
         {isCollapsible && (
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="text-white/70 hover:text-white transition-colors p-1"
+            className="text-[#8A8A8A] hover:text-[#5A5A5A] transition-colors p-1"
           >
             <motion.div animate={{ rotate: isOpen ? 180 : 0 }}>
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -83,7 +83,7 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className="flex items-center space-x-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition border border-white/10"
+                  className="flex items-center space-x-3 p-3 rounded-xl bg-white/70 hover:bg-white transition border border-[#8B6F47]/20"
                 >
                   {/* Agent 图标 */}
                   <div className="text-2xl w-10 h-10 flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg">
@@ -93,7 +93,7 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
                   {/* Agent 名称和状态 */}
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-white/90">
+                      <span className="text-sm font-medium text-[#2D2D2D]">
                         {AGENT_DISPLAY_NAMES[agent.agentName] || agent.agentName}
                       </span>
                       <span className={`text-xs px-2 py-1 rounded-full ${
@@ -103,14 +103,14 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
                           ? 'bg-gradient-to-r ' + getStatusColor(agent.status) + ' text-white'
                           : agent.status === 'error'
                           ? 'bg-gradient-to-r ' + getStatusColor(agent.status) + ' text-white'
-                          : 'bg-white/10 text-white/50'
+                          : 'bg-[#F1ECE4] text-[#7A7368]'
                       }`}>
                         {getStatusText(agent.status)}
                       </span>
                     </div>
 
                     {/* 进度条 */}
-                    <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="mt-2 h-1.5 bg-[#E9E2D8] rounded-full overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{
@@ -126,7 +126,7 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
                       <motion.p
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
-                        className="text-xs text-white/50 mt-1"
+                        className="text-xs text-[#6B6459] mt-1"
                       >
                         {agent.message}
                       </motion.p>
@@ -145,7 +145,7 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
               >
                 <div className="flex items-center justify-center space-x-2">
                   <div className="w-2 h-2 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-pulse" />
-                  <span className="text-sm text-purple-200">AI 正在分析您的请求...</span>
+                  <span className="text-sm text-[#5A5A5A]">AI 正在分析您的请求...</span>
                 </div>
               </motion.div>
             )}

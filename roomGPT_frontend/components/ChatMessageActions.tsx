@@ -37,10 +37,10 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         onClick={handleCopy}
-        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition"
+        className="p-1.5 rounded-lg bg-white/70 hover:bg-white border border-[#8B6F47]/20 transition"
         title="复制"
       >
-        <svg className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-white/60'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-4 h-4 ${copied ? 'text-green-500' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           {copied ? (
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           ) : (
@@ -54,11 +54,11 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
         whileTap={{ scale: 0.95 }}
         onClick={handleLike}
         className={`p-1.5 rounded-lg border transition ${
-          liked ? 'bg-green-500/20 border-green-500/30' : 'bg-white/5 hover:bg-white/10 border-white/10'
+          liked ? 'bg-green-500/20 border-green-500/30' : 'bg-white/70 hover:bg-white border-[#8B6F47]/20'
         }`}
         title="点赞"
       >
-        <svg className={`w-4 h-4 ${liked ? 'text-green-400' : 'text-white/60'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-4 h-4 ${liked ? 'text-green-500' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115 26H5a2 2 0 01-2-2v-4a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 01-2-2H7a2 2 0 01-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 01-2-2h-2a2 2 0 01-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 01-2-2H7a2 2 0 01-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 01-2-2H4z" />
         </svg>
       </motion.button>
@@ -68,11 +68,11 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
         whileTap={{ scale: 0.95 }}
         onClick={handleDislike}
         className={`p-1.5 rounded-lg border transition ${
-          disliked ? 'bg-red-500/20 border-red-500/30' : 'bg-white/5 hover:bg-white/10 border-white/10'
+          disliked ? 'bg-red-500/20 border-red-500/30' : 'bg-white/70 hover:bg-white border-[#8B6F47]/20'
         }`}
         title="反馈"
       >
-        <svg className={`w-4 h-4 ${disliked ? 'text-red-400' : 'text-white/60'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-4 h-4 ${disliked ? 'text-red-500' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.936 2h3.108a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115 26h8a2 2 0 002-2v-4a2 2 0 00-2-2h-2a2 2 0 00-2-2v-2a2 2 0 00-2-2h-2a2 2 0 00-2-2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 00-2-2h-2a2 2 0 00-2-2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 00-2-2h-2a2 2 0 00-2-2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H4z" />
         </svg>
       </motion.button>
@@ -82,10 +82,10 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.95 }}
           onClick={onRegenerate}
-          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition"
+          className="p-1.5 rounded-lg bg-white/70 hover:bg-white border border-[#8B6F47]/20 transition"
           title="重新生成"
         >
-          <svg className="w-4 h-4 text-white/60 hover:text-white/90 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-[#8A8A8A] hover:text-[#5A5A5A] transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </motion.button>

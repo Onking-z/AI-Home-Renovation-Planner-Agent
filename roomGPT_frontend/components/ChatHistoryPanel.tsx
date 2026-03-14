@@ -108,15 +108,15 @@ export default function ChatHistoryPanel({ isOpen, onClose, onLoadHistory }: Cha
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -300, opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 h-full w-80 bg-gradient-to-b from-[#0f0c29] to-[#302b63] border-r border-white/10 z-50 flex flex-col"
+              className="fixed top-0 left-0 h-full w-80 bg-gradient-to-b from-[#FAF8F5] to-[#F2ECE2] border-r border-[#8B6F47]/15 z-50 flex flex-col"
             >
               {/* 头部 */}
-              <div className="p-4 border-b border-white/10">
+              <div className="p-4 border-b border-[#8B6F47]/15">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">💬 历史记录</h2>
+                  <h2 className="text-lg font-semibold text-[#2D2D2D]">💬 历史记录</h2>
                   <button
                     onClick={onClose}
-                    className="text-white/70 hover:text-white transition-colors"
+                    className="text-[#8A8A8A] hover:text-[#5A5A5A] transition-colors"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12M18 6l-12-12" />
@@ -129,8 +129,8 @@ export default function ChatHistoryPanel({ isOpen, onClose, onLoadHistory }: Cha
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {history.length === 0 ? (
                   <div className="text-center py-8">
-                    <div className="text-4xl mb-3 text-white/30">📭</div>
-                    <p className="text-white/50">暂无历史记录</p>
+                    <div className="text-4xl mb-3 text-[#B1A99B]">📭</div>
+                    <p className="text-[#6B6459]">暂无历史记录</p>
                   </div>
                 ) : (
                   history.map((message, index) => (
@@ -139,7 +139,7 @@ export default function ChatHistoryPanel({ isOpen, onClose, onLoadHistory }: Cha
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="p-3 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer transition border border-white/10"
+                      className="p-3 rounded-xl bg-white/70 hover:bg-white cursor-pointer transition border border-[#8B6F47]/15"
                     >
                       <div className="flex items-start space-x-2">
                         {message.role === "user" ? (
@@ -152,12 +152,12 @@ export default function ChatHistoryPanel({ isOpen, onClose, onLoadHistory }: Cha
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-white/90 line-clamp-2 mb-1">
+                          <p className="text-sm text-[#2D2D2D] line-clamp-2 mb-1">
                             {message.content}
                           </p>
-                          <div className="flex items-center justify-between text-xs text-white/40">
+                          <div className="flex items-center justify-between text-xs text-[#8A8A8A]">
                             {message.agentName && (
-                              <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-200">
+                              <span className="px-2 py-0.5 rounded bg-[#EEE7DB] text-[#6B6459]">
                                 {AGENT_DISPLAY_NAMES[message.agentName] || message.agentName}
                               </span>
                             )}
@@ -171,10 +171,10 @@ export default function ChatHistoryPanel({ isOpen, onClose, onLoadHistory }: Cha
               </div>
 
               {/* 底部操作 */}
-              <div className="p-4 border-t border-white/10">
+              <div className="p-4 border-t border-[#8B6F47]/15">
                 <button
                   onClick={clearHistory}
-                  className="w-full px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-xl transition text-sm font-medium"
+                  className="w-full px-4 py-2 bg-red-500/12 hover:bg-red-500/20 text-red-700 rounded-xl transition text-sm font-medium"
                 >
                   清空历史记录
                 </button>

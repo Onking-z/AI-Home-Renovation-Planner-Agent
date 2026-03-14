@@ -55,9 +55,9 @@ export default function LumiereIntro({ onComplete }: LumiereIntroProps) {
               {/* 定义渐变 */}
               <defs>
                 <linearGradient id="text-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#fff" stopOpacity="0.9" />
-                  <stop offset="50%" stopColor="#dbeafe" stopOpacity="1" />
-                  <stop offset="100%" stopColor="#fff" stopOpacity="0.9" />
+                  <stop offset="0%" stopColor="#8B6F47" stopOpacity="0.9" />
+                  <stop offset="50%" stopColor="#A68B5B" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#8B6F47" stopOpacity="0.9" />
                 </linearGradient>
                 <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
                   <feGaussianBlur stdDeviation="3" result="coloredBlur" />
@@ -85,7 +85,7 @@ export default function LumiereIntro({ onComplete }: LumiereIntroProps) {
                 }}
                 animate={{ 
                   strokeDashoffset: 0,
-                  fill: "#ffffff"
+                  fill: "#8B6F47"
                 }}
                 transition={{
                   strokeDashoffset: { 
@@ -108,7 +108,7 @@ export default function LumiereIntro({ onComplete }: LumiereIntroProps) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: strokeDuration, duration: 0.8 }}
-              className="mt-2 text-center text-blue-200/60 font-sans text-sm tracking-[0.3em] uppercase"
+              className="mt-2 text-center text-[#8A8A8A] font-sans text-sm tracking-[0.3em] uppercase"
             >
               AI Interior Designer
             </motion.div>

@@ -273,8 +273,8 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
             className="text-center py-12"
           >
             <div className="text-6xl mb-4">💬</div>
-            <h3 className="text-xl font-semibold text-white/90 mb-2">开始您的装修咨询</h3>
-            <p className="text-white/50">您可以提出问题或上传房间照片进行分析</p>
+            <h3 className="text-xl font-semibold text-[#2D2D2D] mb-2">开始您的装修咨询</h3>
+            <p className="text-[#6B6459]">您可以提出问题或上传房间照片进行分析</p>
           </motion.div>
         )}
 
@@ -290,15 +290,15 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
               <div className={`max-w-[80%] ${
                 message.role === "user"
                   ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-2xl rounded-br-sm shadow-lg shadow-blue-500/20"
-                  : "bg-white/10 backdrop-blur-md text-white/90 rounded-2xl rounded-bl-sm border border-white/10"
+                    : "bg-white/70 backdrop-blur-md text-[#2D2D2D] rounded-2xl rounded-bl-sm border border-[#8B6F47]/20"
               } p-4`}>
                 {/* Agent 标签 */}
                 {message.agentName && message.role === "assistant" && (
-                  <div className="flex items-center space-x-2 mb-2 pb-2 border-b border-white/10">
+                  <div className="flex items-center space-x-2 mb-2 pb-2 border-b border-[#8B6F47]/20">
                     <span className="text-lg">
                       {AGENT_ICONS[message.agentName] || "🤖"}
                     </span>
-                    <span className="text-sm font-semibold text-purple-300">
+                    <span className="text-sm font-semibold text-[#8B6F47]">
                       {AGENT_DISPLAY_NAMES[message.agentName] || message.agentName}
                     </span>
                   </div>
@@ -307,14 +307,14 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
                 {/* 消息内容 */}
                 <div className="whitespace-pre-wrap">
                   {message.content || (
-                    <span className="text-white/40 italic">正在思考...</span>
+                    <span className="text-[#8A8A8A] italic">正在思考...</span>
                   )}
                 </div>
 
                 {/* 生成的图片 */}
                 {message.imageUrl && (
                   <div className="mt-3">
-                    <div className="text-xs text-white/50 mb-2">生成的效果图：</div>
+                    <div className="text-xs text-[#6B6459] mb-2">生成的效果图：</div>
                     <img
                       src={message.imageUrl}
                       alt="生成的效果图"
@@ -333,7 +333,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
 
                 {/* 时间戳 */}
                 <div className={`text-xs mt-2 ${
-                  message.role === "user" ? "text-blue-200" : "text-white/40"
+                  message.role === "user" ? "text-blue-100" : "text-[#8A8A8A]"
                 }`}>
                   {message.timestamp.toLocaleTimeString("zh-CN", {
                     hour: "2-digit",
@@ -352,10 +352,10 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
             animate={{ opacity: 1 }}
             className="flex justify-start"
           >
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl rounded-bl-sm p-4 border border-white/10">
+            <div className="bg-white/70 backdrop-blur-md rounded-2xl rounded-bl-sm p-4 border border-[#8B6F47]/20">
               <div className="flex items-center space-x-2">
-                <LoadingDots color="white" style="small" />
-                <span className="text-sm text-white/70">AI 正在回复...</span>
+                <LoadingDots color="#8B6F47" style="small" />
+                <span className="text-sm text-[#5A5A5A]">AI 正在回复...</span>
               </div>
             </div>
           </motion.div>
@@ -375,7 +375,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
       )}
 
       {/* 输入区域 */}
-      <div className="flex-shrink-0 mt-4 p-4 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10">
+      <div className="flex-shrink-0 mt-4 p-4 bg-white/55 backdrop-blur-md rounded-2xl border border-[#8B6F47]/20">
         {/* 图片预览 */}
         {imagePreview && (
           <div className="mb-3 relative inline-block">
@@ -404,7 +404,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="输入您的问题或描述装修需求..."
-              className="w-full bg-white/10 text-white rounded-xl px-4 py-3 pr-12 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400/50 transition placeholder:text-white/40"
+              className="w-full bg-white/80 text-[#2D2D2D] rounded-xl px-4 py-3 pr-12 resize-none focus:outline-none focus:ring-2 focus:ring-[#8B6F47]/40 transition placeholder:text-[#8A8A8A]"
               rows={1}
               disabled={isSending}
             />
@@ -412,7 +412,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
             {/* 图片上传按钮 */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="absolute right-3 bottom-3 text-white/50 hover:text-white transition"
+              className="absolute right-3 bottom-3 text-[#8A8A8A] hover:text-[#5A5A5A] transition"
               disabled={isSending}
             >
               <svg
@@ -447,7 +447,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
                 className={`px-3 py-2 rounded-lg text-sm transition ${
                   imageType === "current_room"
                     ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/20"
-                    : "bg-white/10 text-white/70 hover:bg-white/20"
+                    : "bg-white/70 text-[#5A5A5A] hover:bg-white"
                 }`}
               >
                 当前房间
@@ -457,7 +457,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
                 className={`px-3 py-2 rounded-lg text-sm transition ${
                   imageType === "inspiration"
                     ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/20"
-                    : "bg-white/10 text-white/70 hover:bg-white/20"
+                    : "bg-white/70 text-[#5A5A5A] hover:bg-white"
                 }`}
               >
                 灵感图片
@@ -471,7 +471,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
             disabled={isSending || (!input.trim() && !selectedImage)}
             className={`px-6 py-3 rounded-xl font-medium transition-all duration-300 ${
               isSending || (!input.trim() && !selectedImage)
-                ? "bg-white/5 text-white/30 cursor-not-allowed"
+                ? "bg-white/60 text-[#8A8A8A] cursor-not-allowed"
                 : "bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
             }`}
           >
@@ -480,17 +480,17 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
         </div>
 
         {/* 场景切换按钮 */}
-        <div className="flex items-center justify-between mt-3 mb-2 px-4 bg-white/5 rounded-xl border border-white/10">
+        <div className="flex items-center justify-between mt-3 mb-2 px-4 bg-white/55 rounded-xl border border-[#8B6F47]/20">
           <button
             onClick={() => setShowQuickScenes(!showQuickScenes)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition text-xs text-white/70 hover:text-white/90"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/70 hover:bg-white border border-[#8B6F47]/20 transition text-xs text-[#5A5A5A] hover:text-[#2D2D2D]"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2v12a2 2 0 01-2 2h12a2 2 0 01-2-2V6a2 2 0 01-2-2m2 4v2a2 2 0 002 2h12a2 2 0 002-2v-2M4 14h16" />
             </svg>
             <span>{showQuickScenes ? "返回输入" : "场景选择"}</span>
           </button>
-          <span className="text-xs text-white/30">按 Enter 发送 · Shift+Enter 换行</span>
+          <span className="text-xs text-[#8A8A8A]">按 Enter 发送 · Shift+Enter 换行</span>
         </div>
       </div>
     </div>

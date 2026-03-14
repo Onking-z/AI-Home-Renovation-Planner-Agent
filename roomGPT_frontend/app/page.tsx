@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -135,14 +135,14 @@ export default function HomePage() {
           <PairedCarousel pairs={pairedSlides} interval={3400} />
         </motion.section>
 
-        <section className=”mt-12 w-full pb-10 sm:mt-16 sm:pb-16 px-6”>
-          <div className=”mx-auto max-w-6xl text-left”>
+        <section className="mt-12 w-full pb-10 sm:mt-16 sm:pb-16 px-6">
+          <div className="mx-auto max-w-6xl text-left">
             <motion.h3
               initial={{ opacity: 0, y: 18 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.4 }}
               transition={{ duration: 0.55 }}
-              className=”text-center text-2xl font-semibold text-[#2D2D2D] sm:text-3xl”
+              className="text-center text-2xl font-semibold text-[#2D2D2D] sm:text-3xl"
             >
               关于这个项目
             </motion.h3>
@@ -151,12 +151,12 @@ export default function HomePage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
               transition={{ duration: 0.55, delay: 0.08 }}
-              className=”mx-auto mt-4 max-w-3xl text-center text-base leading-7 text-[#5A5A5A] sm:text-lg”
+              className="mx-auto mt-4 max-w-3xl text-center text-base leading-7 text-[#5A5A5A] sm:text-lg"
             >
               我们希望让装修沟通变得看得见、说得清、能落地，让每个家都有温度。
             </motion.p>
 
-            <div className=”mt-7 grid grid-cols-1 gap-5 sm:mt-10 md:grid-cols-3”>
+            <div className="mt-7 grid grid-cols-1 gap-5 sm:mt-10 md:grid-cols-3">
               {introCards.map((card, index) => (
                 <motion.article
                   key={card.title}
@@ -164,10 +164,10 @@ export default function HomePage() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, amount: 0.2 }}
                   transition={{ duration: 0.5, delay: 0.1 * index }}
-                  className=”intro-zoom-card rounded-2xl border border-[#8B6F47]/15 bg-white p-6 backdrop-blur-sm transition hover:border-[#8B6F47]/35”
+                  className="intro-zoom-card rounded-2xl border border-[#8B6F47]/15 bg-white p-6 backdrop-blur-sm transition hover:border-[#8B6F47]/35"
                 >
-                  <h4 className=”text-lg font-semibold text-[#8B6F47]”>{card.title}</h4>
-                  <p className=”mt-3 text-sm leading-7 text-[#5A5A5A]”>{card.content}</p>
+                  <h4 className="text-lg font-semibold text-[#8B6F47]">{card.title}</h4>
+                  <p className="mt-3 text-sm leading-7 text-[#5A5A5A]">{card.content}</p>
                 </motion.article>
               ))}
             </div>
