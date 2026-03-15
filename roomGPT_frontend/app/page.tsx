@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -58,17 +58,34 @@ const introCards = [
   {
     title: "项目初衷",
     content:
-      "把装修灵感从“想象”变成“可视化决策”。通过上传真实房间照片，快速看到改造方向，减少试错成本。",
+      "把装修灵感从'想象'变成'可视化决策'。通过上传真实房间照片，快速看到改造方向，减少试错成本。",
+    icon: (
+      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" strokeWidth="2" />
+        <circle cx="12" cy="12" r="6" strokeWidth="2" />
+        <circle cx="12" cy="12" r="2" strokeWidth="2" />
+      </svg>
+    ),
   },
   {
     title: "如何驱动",
     content:
       "系统采用多智能体协作：视觉评估理解现状，设计规划输出方案，项目协调整合成可执行建议与效果图。",
+    icon: (
+      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+      </svg>
+    ),
   },
   {
     title: "你能获得什么",
     content:
       "不仅有对比效果图，还能获得更清晰的改造路径、风格选择依据，以及面向实际落地的装修思路。",
+    icon: (
+      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
   },
 ];
 
@@ -89,6 +106,8 @@ export default function HomePage() {
 
       {showIntro && <LumiereIntro onComplete={() => setShowIntro(false)} />}
       <Header />
+      {/* 固定导航占位 */}
+      <div className="header-spacer" />
       <main className="relative mt-10 flex w-full flex-1 flex-col items-center justify-center px-6 text-center sm:mt-12">
         <motion.h1
           initial={{ opacity: 0, y: 28 }}
@@ -132,10 +151,10 @@ export default function HomePage() {
           transition={{ duration: 0.75, delay: 0.24 }}
           className="mt-10 w-full sm:mt-14"
         >
-          <PairedCarousel pairs={pairedSlides} interval={3400} />
+          <PairedCarousel pairs={pairedSlides} interval={4000} />
         </motion.section>
 
-        <section className="mt-12 w-full pb-10 sm:mt-16 sm:pb-16 px-6">
+        <section id="about" className="mt-12 w-full pb-10 sm:mt-16 sm:pb-16 px-6">
           <div className="mx-auto max-w-6xl text-left">
             <motion.h3
               initial={{ opacity: 0, y: 18 }}
@@ -166,6 +185,9 @@ export default function HomePage() {
                   transition={{ duration: 0.5, delay: 0.1 * index }}
                   className="intro-zoom-card rounded-2xl border border-[#8B6F47]/15 bg-white p-6 backdrop-blur-sm transition hover:border-[#8B6F47]/35"
                 >
+                  <div className="card-icon text-[#8B6F47] mb-4 transition-transform duration-300">
+                    {card.icon}
+                  </div>
                   <h4 className="text-lg font-semibold text-[#8B6F47]">{card.title}</h4>
                   <p className="mt-3 text-sm leading-7 text-[#5A5A5A]">{card.content}</p>
                 </motion.article>

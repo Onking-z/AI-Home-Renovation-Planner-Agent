@@ -16,9 +16,9 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'processing':
-        return 'from-purple-500 to-blue-500';
+        return 'from-[#D4A652] to-[#8B6F47]';
       case 'completed':
-        return 'from-green-500 to-emerald-500';
+        return 'from-[#7A9E7E] to-[#5B8A72]';
       case 'error':
         return 'from-red-500 to-orange-500';
       default:
@@ -48,7 +48,7 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
           <span>🤖</span>
           <span>AI 智能体协作状态</span>
           {processingCount > 0 && (
-            <span className="ml-2 px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 text-white text-xs animate-pulse">
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-gradient-to-r from-[#D4A652] to-[#8B6F47] text-white text-xs animate-pulse">
               {processingCount} 个处理中
             </span>
           )}
@@ -86,7 +86,7 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
                   className="flex items-center space-x-3 p-3 rounded-xl bg-white/70 hover:bg-white transition border border-[#8B6F47]/20"
                 >
                   {/* Agent 图标 */}
-                  <div className="text-2xl w-10 h-10 flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg">
+                  <div className="text-2xl w-10 h-10 flex items-center justify-center bg-gradient-to-br from-[#D4A652]/20 to-[#8B6F47]/20 rounded-lg">
                     {AGENT_ICONS[agent.agentName] || '🤖'}
                   </div>
 
@@ -141,10 +141,10 @@ export default function AgentStatus({ agents, isCollapsible = true }: AgentStatu
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-4 p-3 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/30 rounded-xl"
+                className="mt-4 p-3 bg-gradient-to-r from-[#D4A652]/10 to-[#8B6F47]/10 border border-[#8B6F47]/30 rounded-xl"
               >
                 <div className="flex items-center justify-center space-x-2">
-                  <div className="w-2 h-2 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-pulse" />
+                  <div className="w-2 h-2 bg-gradient-to-r from-[#D4A652] to-[#8B6F47] rounded-full animate-pulse" />
                   <span className="text-sm text-[#5A5A5A]">AI 正在分析您的请求...</span>
                 </div>
               </motion.div>

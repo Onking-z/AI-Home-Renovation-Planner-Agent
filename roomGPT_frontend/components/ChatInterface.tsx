@@ -272,7 +272,77 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
             animate={{ opacity: 1, y: 0 }}
             className="text-center py-12"
           >
-            <div className="text-6xl mb-4">💬</div>
+            {/* 房屋轮廓 SVG 插画 */}
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="mx-auto w-24 h-24 mb-6"
+            >
+              <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+                {/* 屋顶 */}
+                <motion.path
+                  d="M50 15 L10 50 L20 50 L20 85 L80 85 L80 50 L90 50 Z"
+                  stroke="url(#houseGradient)"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 1.5, ease: "easeInOut" }}
+                />
+                {/* 门 */}
+                <motion.rect
+                  x="40" y="58" width="20" height="27"
+                  stroke="url(#houseGradient)"
+                  strokeWidth="2"
+                  fill="none"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1, duration: 0.5 }}
+                />
+                {/* 窗户左 */}
+                <motion.rect
+                  x="26" y="55" width="10" height="12"
+                  stroke="url(#houseGradient)"
+                  strokeWidth="2"
+                  fill="none"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.2, duration: 0.5 }}
+                />
+                {/* 窗户右 */}
+                <motion.rect
+                  x="64" y="55" width="10" height="12"
+                  stroke="url(#houseGradient)"
+                  strokeWidth="2"
+                  fill="none"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.4, duration: 0.5 }}
+                />
+                {/* 烟囱 */}
+                <motion.path
+                  d="M65 25 L65 38 L75 38 L75 30"
+                  stroke="url(#houseGradient)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.6, duration: 0.5 }}
+                />
+                <defs>
+                  <linearGradient id="houseGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#D4A652" />
+                    <stop offset="50%" stopColor="#8B6F47" />
+                    <stop offset="100%" stopColor="#7A9E7E" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </motion.div>
             <h3 className="text-xl font-semibold text-[#2D2D2D] mb-2">开始您的装修咨询</h3>
             <p className="text-[#6B6459]">您可以提出问题或上传房间照片进行分析</p>
           </motion.div>
@@ -287,11 +357,15 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
               exit={{ opacity: 0, y: -10 }}
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div className={`max-w-[80%] ${
+              <div className={`max-w-[80%] group ${
                 message.role === "user"
-                  ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-2xl rounded-br-sm shadow-lg shadow-blue-500/20"
-                    : "bg-white/70 backdrop-blur-md text-[#2D2D2D] rounded-2xl rounded-bl-sm border border-[#8B6F47]/20"
+                  ? "bg-gradient-to-r from-[#D4A652] to-[#8B6F47] text-white rounded-2xl rounded-br-sm shadow-lg shadow-[#8B6F47]/20"
+                    : "bg-white/70 backdrop-blur-md text-[#2D2D2D] rounded-2xl rounded-bl-sm border border-[#8B6F47]/20 relative overflow-hidden"
               } p-4`}>
+                {/* AI 消息左侧装饰条 */}
+                {message.role === "assistant" && (
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[#D4A652] via-[#8B6F47] to-[#7A9E7E]" />
+                )}
                 {/* Agent 标签 */}
                 {message.agentName && message.role === "assistant" && (
                   <div className="flex items-center space-x-2 mb-2 pb-2 border-b border-[#8B6F47]/20">
@@ -333,7 +407,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
 
                 {/* 时间戳 */}
                 <div className={`text-xs mt-2 ${
-                  message.role === "user" ? "text-blue-100" : "text-[#8A8A8A]"
+                  message.role === "user" ? "text-amber-100" : "text-[#8A8A8A]"
                 }`}>
                   {message.timestamp.toLocaleTimeString("zh-CN", {
                     hour: "2-digit",
@@ -446,7 +520,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
                 onClick={() => setImageType("current_room")}
                 className={`px-3 py-2 rounded-lg text-sm transition ${
                   imageType === "current_room"
-                    ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/20"
+                    ? "bg-gradient-to-r from-[#7A9E7E] to-[#9DBF9F] text-white shadow-lg shadow-[#7A9E7E]/20"
                     : "bg-white/70 text-[#5A5A5A] hover:bg-white"
                 }`}
               >
@@ -456,7 +530,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
                 onClick={() => setImageType("inspiration")}
                 className={`px-3 py-2 rounded-lg text-sm transition ${
                   imageType === "inspiration"
-                    ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/20"
+                    ? "bg-gradient-to-r from-[#7A9E7E] to-[#9DBF9F] text-white shadow-lg shadow-[#7A9E7E]/20"
                     : "bg-white/70 text-[#5A5A5A] hover:bg-white"
                 }`}
               >
@@ -472,7 +546,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
             className={`px-6 py-3 rounded-xl font-medium transition-all duration-300 ${
               isSending || (!input.trim() && !selectedImage)
                 ? "bg-white/60 text-[#8A8A8A] cursor-not-allowed"
-                : "bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
+                : "bg-gradient-to-r from-[#8B6F47] to-[#A68B5B] text-white shadow-lg shadow-[#8B6F47]/25 hover:shadow-[#8B6F47]/40"
             }`}
           >
             {isSending ? "发送中" : "发送"}

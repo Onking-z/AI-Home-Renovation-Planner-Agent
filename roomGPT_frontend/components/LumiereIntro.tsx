@@ -1,15 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Sacramento } from "next/font/google"; // 引入手写风格字体
 import { useEffect, useState } from "react";
-
-// 加载字体配置
-const sacramento = Sacramento({
-  weight: "400",
-  subsets: ["latin", "latin-ext"],
-  display: "swap",
-});
 
 type LumiereIntroProps = {
   onComplete: () => void;
@@ -18,20 +10,21 @@ type LumiereIntroProps = {
 export default function LumiereIntro({ onComplete }: LumiereIntroProps) {
   const [isVisible, setIsVisible] = useState(true);
 
-  // 动画配置常量
-  const strokeDuration = 2; // 描边书写时长
-  const fillDuration = 0.8;   // 填充颜色渐变时长
-  const totalDuration = strokeDuration + fillDuration + 0.5; // 总时长预留一点缓冲
-
   useEffect(() => {
+    // 总动画时长约3秒
     const timer = setTimeout(() => {
       setIsVisible(false);
-      // 等待淡出动画完成后调用 onComplete
-      setTimeout(onComplete, 800); 
-    }, totalDuration * 1000);
+    }, 3000);
 
     return () => clearTimeout(timer);
-  }, [onComplete, totalDuration]);
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) {
+      const timer = setTimeout(onComplete, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isVisible, onComplete]);
 
   return (
     <AnimatePresence>
@@ -45,14 +38,13 @@ export default function LumiereIntro({ onComplete }: LumiereIntroProps) {
         >
           {/* 温暖背景光晕效果 */}
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(139,111,71,0.12)_0%,rgba(250,248,245,0)_60%)]" />
-          
-          <div className={`relative z-10 ${sacramento.className}`}>
+
+          <div className="relative z-10">
             <svg
               viewBox="0 0 600 160"
               className="w-[80vw] max-w-[600px] h-auto overflow-visible"
               xmlns="http://www.w3.org/2000/svg"
             >
-              {/* 定义渐变 */}
               <defs>
                 <linearGradient id="text-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
                   <stop offset="0%" stopColor="#8B6F47" stopOpacity="0.9" />
@@ -77,37 +69,27 @@ export default function LumiereIntro({ onComplete }: LumiereIntroProps) {
                 stroke="url(#text-gradient)"
                 strokeWidth="1.5"
                 fill="transparent"
-                style={{ filter: "url(#glow)" }} // 添加发光滤镜
-                initial={{ 
-                  strokeDasharray: 1000, 
+                style={{ filter: "url(#glow)" }}
+                initial={{
+                  strokeDasharray: 1000,
                   strokeDashoffset: 1000,
-                  fill: "transparent"
                 }}
-                animate={{ 
+                animate={{
                   strokeDashoffset: 0,
-                  fill: "#8B6F47"
                 }}
                 transition={{
-                  strokeDashoffset: { 
-                    duration: strokeDuration, 
-                    ease: "easeInOut" 
-                  },
-                  fill: { 
-                    delay: strokeDuration - 0.5, 
-                    duration: fillDuration, 
-                    ease: "easeOut" 
-                  }
+                  duration: 2,
+                  ease: "easeInOut"
                 }}
               >
                 Lumière
               </motion.text>
             </svg>
-            
-            {/* 副标题淡入 */}
+
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: strokeDuration, duration: 0.8 }}
+              transition={{ delay: 2, duration: 0.8 }}
               className="mt-2 text-center text-[#8A8A8A] font-sans text-sm tracking-[0.3em] uppercase"
             >
               AI Interior Designer

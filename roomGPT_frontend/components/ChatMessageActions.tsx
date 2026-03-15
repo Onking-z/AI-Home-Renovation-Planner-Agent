@@ -40,7 +40,7 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
         className="p-1.5 rounded-lg bg-white/70 hover:bg-white border border-[#8B6F47]/20 transition"
         title="复制"
       >
-        <svg className={`w-4 h-4 ${copied ? 'text-green-500' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-4 h-4 ${copied ? 'text-[#7A9E7E]' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           {copied ? (
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           ) : (
@@ -54,12 +54,12 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
         whileTap={{ scale: 0.95 }}
         onClick={handleLike}
         className={`p-1.5 rounded-lg border transition ${
-          liked ? 'bg-green-500/20 border-green-500/30' : 'bg-white/70 hover:bg-white border-[#8B6F47]/20'
+          liked ? 'bg-[#7A9E7E]/20 border-[#7A9E7E]/30' : 'bg-white/70 hover:bg-white border-[#8B6F47]/20'
         }`}
         title="点赞"
       >
-        <svg className={`w-4 h-4 ${liked ? 'text-green-500' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115 26H5a2 2 0 01-2-2v-4a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 01-2-2H7a2 2 0 01-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 01-2-2h-2a2 2 0 01-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 01-2-2H7a2 2 0 01-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 01-2-2H4z" />
+        <svg className={`w-4 h-4 ${liked ? 'text-[#7A9E7E]' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
         </svg>
       </motion.button>
 
@@ -68,12 +68,12 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
         whileTap={{ scale: 0.95 }}
         onClick={handleDislike}
         className={`p-1.5 rounded-lg border transition ${
-          disliked ? 'bg-red-500/20 border-red-500/30' : 'bg-white/70 hover:bg-white border-[#8B6F47]/20'
+          disliked ? 'bg-[#8B6F47]/20 border-[#8B6F47]/30' : 'bg-white/70 hover:bg-white border-[#8B6F47]/20'
         }`}
         title="反馈"
       >
-        <svg className={`w-4 h-4 ${disliked ? 'text-red-500' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.936 2h3.108a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115 26h8a2 2 0 002-2v-4a2 2 0 00-2-2h-2a2 2 0 00-2-2v-2a2 2 0 00-2-2h-2a2 2 0 00-2-2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 00-2-2h-2a2 2 0 00-2-2v2a2 2 0 002 2h2a2 2 0 002-2v-4a2 2 0 00-2-2h-2a2 2 0 00-2-2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H4z" />
+        <svg className={`w-4 h-4 ${disliked ? 'text-[#8B6F47]' : 'text-[#8A8A8A]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.936 2h3.108a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h4.017c.163 0 .326-.02.485-.06L20 21V11a2 2 0 00-2-2h-2.5" />
         </svg>
       </motion.button>
 

@@ -126,6 +126,8 @@ export default function DreamPage() {
   return (
     <div className="dream-page relative min-h-screen flex flex-col">
       <Header />
+      {/* 固定导航占位 */}
+      <div className="header-spacer" />
       <main className="flex flex-1 w-full flex-col items-center justify-center text-center px-6 py-8">
         {/* 温暖动态背景层 */}
         <div className="dream-background fixed inset-0 -z-10 pointer-events-none">
