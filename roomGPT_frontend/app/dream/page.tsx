@@ -9,10 +9,8 @@ import { CompareSlider } from "../../components/CompareSlider";
 import Footer from "../../components/Footer";
 import Header from "../../components/Header";
 import LoadingDots from "../../components/LoadingDots";
-import ResizablePanel from "../../components/ResizablePanel";
 import Toggle from "../../components/Toggle";
 import ChatInterface from "../../components/ChatInterface";
-import AgentStatus from "../../components/AgentStatus";
 import ChatHistoryPanel from "../../components/ChatHistoryPanel";
 import { ChatMessage } from "../../types/chat";
 import appendNewToName from "../../utils/appendNewToName";
@@ -132,32 +130,31 @@ export default function DreamPage() {
   }
 
   return (
-    <div className="dream-page relative min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       <Header />
-      {/* 固定导航占位 */}
-      <div className="header-spacer" />
-      <main className="flex flex-1 w-full flex-col items-center justify-center text-center px-6 py-8">
-        {/* 温暖动态背景层 */}
-        <div className="dream-background fixed inset-0 -z-10 pointer-events-none">
-          {/* 背景由 CSS 控制 */}
-          <div className="absolute inset-0">
-            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-amber-600/[0.08] rounded-full blur-3xl animate-pulse" style={{ animationDelay: "0s" }} />
-            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-600/[0.06] rounded-full blur-3xl animate-pulse" style={{ animationDelay: "2s" }} />
-            <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-teal-500/[0.05] rounded-full blur-2xl animate-pulse" style={{ animationDelay: "4s" }} />
-          </div>
+      {/* 温暖动态背景层 */}
+      <div className="dream-background fixed inset-0 -z-10 pointer-events-none">
+        {/* 背景由 CSS 控制 */}
+        <div className="absolute inset-0">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-amber-600/[0.08] rounded-full blur-3xl animate-pulse" style={{ animationDelay: "0s" }} />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-600/[0.06] rounded-full blur-3xl animate-pulse" style={{ animationDelay: "2s" }} />
+          <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-teal-500/[0.05] rounded-full blur-2xl animate-pulse" style={{ animationDelay: "4s" }} />
         </div>
+      </div>
 
+      <main className="flex-1 flex flex-col min-h-0 w-full px-4 sm:px-6 pt-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="relative z-10 w-full max-w-7xl"
+          className="flex-1 flex flex-col min-h-0 w-full max-w-7xl mx-auto"
         >
-          <div className="flex items-center justify-between w-full mb-3">
-            <h1 className="font-display text-2xl font-bold tracking-normal text-[#2D2D2D] sm:text-3xl">
+          {/* 标题区域 */}
+          <div className="flex items-center justify-between w-full flex-shrink-0 pb-3 border-b border-[#8B6F47]/10">
+            <h1 className="font-display text-xl font-bold tracking-normal text-[#2D2D2D] sm:text-2xl">
               设计你的{" "}
               <span
-                className={`${dancingScript.className} text-2xl sm:text-3xl font-semibold italic bg-clip-text text-transparent`}
+                className={`${dancingScript.className} text-xl sm:text-2xl font-semibold italic bg-clip-text text-transparent`}
                 style={{
                   backgroundImage: 'linear-gradient(135deg, #E8B86D 0%, #8B6F47 25%, #7A9E7E 50%, #5B8A72 75%, #E8B86D 100%)',
                   textShadow: 'none',
@@ -182,7 +179,7 @@ export default function DreamPage() {
           </div>
 
           {/* 模式切换按钮 */}
-          <div className="flex justify-center space-x-2 mb-4">
+          <div className="flex justify-center space-x-2 py-2 flex-shrink-0">
             <div className="bg-white/60 backdrop-blur-md p-1 rounded-xl border border-[#8B6F47]/15 shadow-sm">
               <button
                 onClick={() => setMode("generate")}
@@ -207,9 +204,8 @@ export default function DreamPage() {
             </div>
           </div>
 
-          {/* AI 模式工具栏已移除，历史记录面板常驻左侧 */}
-
-          <ResizablePanel>
+          {/* 聊天/快速生成内容区域 */}
+          <div className="flex-1 min-h-0 mt-2">
             <AnimatePresence mode="wait">
               <motion.div
                 key={mode}
@@ -221,7 +217,7 @@ export default function DreamPage() {
               >
                 {mode === "chat" ? (
                   // 聊天模式 - 左侧常驻历史记录面板
-                  <motion.div className="flex w-full h-[calc(100vh-220px)]">
+                  <motion.div className="flex w-full h-full min-h-0">
                     {/* 历史记录侧栏 - 常驻左侧 */}
                     <motion.div
                       initial={false}
@@ -260,9 +256,9 @@ export default function DreamPage() {
                     </button>
 
                     {/* 主聊天区域 */}
-                    <div className="flex-1 flex flex-col min-w-0">
+                    <div className="flex-1 flex flex-col min-w-0 min-h-0">
                       {/* 聊天界面 */}
-                      <div className="flex-1 overflow-hidden rounded-2xl bg-white/60 backdrop-blur-md border border-[#8B6F47]/15">
+                      <div className="flex-1 overflow-hidden rounded-2xl bg-white/40 backdrop-blur-sm border border-[#8B6F47]/10">
                         <ChatInterface
                           onError={setError}
                         />
@@ -274,6 +270,10 @@ export default function DreamPage() {
                             <span className="block sm:inline">{error}</span>
                           </div>
                         )}
+                      </div>
+                      {/* 极简 Footer - 只在聊天模式显示 */}
+                      <div className="text-center py-1.5 text-xs text-[#8A8A8A]">
+                        由 <span className="font-medium text-[#8B6F47]">Lumière</span> 强力驱动
                       </div>
                     </div>
                   </motion.div>
@@ -442,10 +442,11 @@ export default function DreamPage() {
                 )}
               </motion.div>
             </AnimatePresence>
-          </ResizablePanel>
+          </div>
         </motion.div>
       </main>
-      <Footer />
+      {/* Footer 只在快速生成模式显示 */}
+      {mode === "generate" && <Footer />}
     </div>
   );
 }
