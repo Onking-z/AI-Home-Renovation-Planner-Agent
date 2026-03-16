@@ -1,6 +1,7 @@
 // import { Analytics } from "@vercel/analytics/react";
 import { Metadata } from "next";
 import "../styles/globals.css";
+import { ToastProvider } from "../components/Toast";
 
 let title = "Lumière - AI 智能家装规划师";
 let description = "上传房间照片，几秒钟内即可生成多种装修效果图。";
@@ -39,7 +40,9 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="bg-[#17181C] text-white">
-        {children}
+        <ToastProvider>
+          {children}
+        </ToastProvider>
         {/* <Analytics /> */}
       </body>
     </html>

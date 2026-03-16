@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { useToast } from "./Toast";
 
 interface ChatMessageActionsProps {
   content: string;
@@ -13,10 +14,12 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
   const [copied, setCopied] = useState(false);
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
+  const { showToast } = useToast();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
     setCopied(true);
+    showToast("已复制到剪贴板", "success");
     onCopy?.();
     setTimeout(() => setCopied(false), 2000);
   };
@@ -24,11 +27,13 @@ export default function ChatMessageActions({ content, onCopy, onRegenerate }: Ch
   const handleLike = () => {
     setLiked(true);
     setDisliked(false);
+    showToast("感谢您的反馈！", "success");
   };
 
   const handleDislike = () => {
     setDisliked(true);
     setLiked(false);
+    showToast("我们会持续改进", "info");
   };
 
   return (

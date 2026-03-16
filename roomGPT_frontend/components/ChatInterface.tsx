@@ -11,6 +11,8 @@ import ChatActions from "./ChatActions";
 import QuickScenes from "./QuickScenes";
 import { ChatMessage, AgentStatus as AgentStatusType, AGENT_DISPLAY_NAMES, AGENT_ICONS } from "../types/chat";
 import LoadingDots from "./LoadingDots";
+import { useToast } from "./Toast";
+import Skeleton, { SkeletonMessage } from "./Skeleton";
 
 interface ChatInterfaceProps {
   onError?: (error: string) => void;
@@ -30,6 +32,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
     { agentName: "ProjectCoordinator", displayName: "项目协调", status: "idle" },
   ]);
   const [showQuickScenes, setShowQuickScenes] = useState(false);
+  const { showToast } = useToast();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +159,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
     // 完成后的处理
     const handleComplete = () => {
       setIsSending(false);
+      showToast("回复已生成", "success");
 
       // 更新 Agent 状态为完成
       if (selectedImage) {
@@ -177,6 +181,7 @@ export default function ChatInterface({ onError }: ChatInterfaceProps) {
     // 错误处理
     const handleError = (errorMessage: string) => {
       onError?.(errorMessage);
+      showToast(errorMessage, "error");
 
       // 更新所有正在处理的 Agent 为错误状态
       setAgentStatuses(prev =>
