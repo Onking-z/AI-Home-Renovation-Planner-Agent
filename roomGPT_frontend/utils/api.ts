@@ -16,7 +16,6 @@ interface StreamChunk {
 
 interface ImagePayload {
   currentRoomImage?: File | null;
-  inspirationImage?: File | null;
 }
 
 function buildChatMessage(data: {
@@ -92,6 +91,31 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
     throw new Error("加载会话列表失败");
   }
   return await response.json();
+}
+
+export async function pinSession(sessionId: string, pinned: boolean): Promise<void> {
+  const formData = new FormData();
+  formData.append("user_id", DEFAULT_USER_ID);
+  formData.append("pinned", String(pinned));
+
+  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/pin`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || error.message || "置顶操作失败");
+  }
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}?user_id=${DEFAULT_USER_ID}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || error.message || "删除会话失败");
+  }
 }
 
 export async function fetchSessionMessages(sessionId: string): Promise<ChatMessage[]> {
@@ -205,10 +229,6 @@ export async function sendChatWithImageStream(
     if (images.currentRoomImage) {
       formData.append("current_room_image", images.currentRoomImage);
     }
-    if (images.inspirationImage) {
-      formData.append("inspiration_image", images.inspirationImage);
-    }
-
     const response = await fetch(`${API_BASE_URL}/api/chat-with-image/stream`, {
       method: "POST",
       body: formData,

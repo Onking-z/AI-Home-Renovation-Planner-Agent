@@ -33,6 +33,7 @@ export interface ChatMessage {
 export interface SessionSummary {
   session_id: string;
   title?: string;
+  pinned?: boolean;
   first_user_message?: string;
   latest_user_message?: string;
   latest_message?: string;

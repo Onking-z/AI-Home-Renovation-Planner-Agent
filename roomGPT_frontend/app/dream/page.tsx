@@ -4,19 +4,21 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Dancing_Script } from "next/font/google";
 import { CompareSlider } from "../../components/CompareSlider";
-import Footer from "../../components/Footer";
 import LoadingDots from "../../components/LoadingDots";
 import Toggle from "../../components/Toggle";
 import ChatInterface from "../../components/ChatInterface";
 import ChatHistoryPanel from "../../components/ChatHistoryPanel";
+import Skeleton from "../../components/Skeleton";
 import appendNewToName from "../../utils/appendNewToName";
 import downloadPhoto from "../../utils/downloadPhoto";
 import DropDown from "../../components/DropDown";
 import { roomLabels, roomType, rooms, themeLabels, themeType, themes } from "../../utils/dropdownTypes";
 import { createAndStoreSessionId, getCurrentSessionId } from "../../utils/session";
 import { ensureSessionExists } from "../../utils/api";
+import { getCurrentUser, isAuthenticated, logout } from "../../utils/auth";
 
 // 加载手写字体
 const dancingScript = Dancing_Script({
@@ -28,8 +30,17 @@ const dancingScript = Dancing_Script({
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 const API_URL = `${API_BASE_URL}/api/chat-with-image`;
+const QUICK_GENERATE_USER = "quick_generate_user";
+
+function createQuickSessionId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `quick-${crypto.randomUUID()}`;
+  }
+  return `quick-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 export default function DreamPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<"generate" | "chat">("generate");
   const [sidebarOpen, setSidebarOpen] = useState(true); // 默认展开
   const [currentSessionId, setCurrentSessionId] = useState<string>("main_session");
@@ -40,20 +51,26 @@ export default function DreamPage() {
   const [sideBySide, setSideBySide] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [photoName, setPhotoName] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string>("");
   const [theme, setTheme] = useState<themeType>("Modern");
   const [room, setRoom] = useState<roomType>("Living Room");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 从 localStorage 恢复侧栏状态
   useEffect(() => {
+    if (!isAuthenticated()) {
+      router.replace("/auth?redirect=/dream");
+      return;
+    }
     const saved = localStorage.getItem("sidebarOpen");
     if (saved !== null) {
       setSidebarOpen(saved === "true");
     }
     const sessionId = getCurrentSessionId();
     setCurrentSessionId(sessionId);
+    setCurrentUserName(getCurrentUser()?.name || "用户");
     ensureSessionExists(sessionId).catch(() => undefined);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!error) return;
@@ -66,6 +83,11 @@ export default function DreamPage() {
     const sessionId = createAndStoreSessionId();
     setCurrentSessionId(sessionId);
     ensureSessionExists(sessionId).catch(() => undefined);
+  };
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/auth?redirect=/dream");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,16 +124,15 @@ export default function DreamPage() {
 
   const generatePhoto = async (file: File) => {
     await new Promise((resolve) => setTimeout(resolve, 200));
+    setRestoredLoaded(false);
     setLoading(true);
     setError(null);
-
-    await ensureSessionExists(currentSessionId).catch(() => undefined);
+    const quickSessionId = createQuickSessionId();
 
     const formData = new FormData();
     formData.append("image", file);
-    formData.append("image_type", "current_room");
-    formData.append("user_id", "frontend_user");
-    formData.append("session_id", currentSessionId);
+    formData.append("user_id", QUICK_GENERATE_USER);
+    formData.append("session_id", quickSessionId);
     formData.append("message", `帮我把这个${roomLabels[room]}翻新成${themeLabels[theme]}。`);
 
     try {
@@ -287,168 +308,170 @@ export default function DreamPage() {
                   </motion.div>
                 ) : (
                   // 快速生成模式
-                  <motion.div className="flex justify-center items-start w-full h-full overflow-y-auto">
-                    <div className="w-full max-w-2xl px-4 pt-16 pb-6 sm:pt-12 flex flex-col items-center">
-                      {!restoredImage && (
-                        <>
-                          <div className="space-y-4 w-full max-w-sm">
-                            <div className="flex mt-3 items-center space-x-3">
-                              <Image
-                                src="/number-1-white.svg"
-                                width={30}
-                                height={30}
-                                alt="步骤一"
-                              />
-                              <p className="text-left font-medium text-[#2D2D2D]">
-                                选择您的装修风格。
-                              </p>
-                            </div>
-                            <DropDown
-                              theme={theme}
-                              setTheme={(newTheme) =>
-                                setTheme(newTheme as typeof theme)
-                              }
-                              themes={themes}
-                            />
+                  <motion.div className="w-full h-full overflow-y-auto px-4 pt-8 pb-6 sm:px-6">
+                    <div className="mx-auto grid w-full max-w-7xl gap-6 lg:grid-cols-[minmax(360px,520px)_1fr] lg:items-start">
+                      <div className="rounded-2xl border border-[#8B6F47]/15 bg-white/55 p-5 backdrop-blur-sm">
+                        <div className="space-y-4">
+                          <div className="flex mt-1 items-center space-x-3">
+                            <Image src="/number-1-white.svg" width={30} height={30} alt="步骤一" />
+                            <p className="text-left font-medium text-[#2D2D2D]">选择您的装修风格。</p>
                           </div>
-                          <div className="space-y-4 w-full max-w-sm mt-6">
-                            <div className="flex items-center space-x-3">
-                              <Image
-                                src="/number-2-white.svg"
-                                width={30}
-                                height={30}
-                                alt="步骤二"
-                              />
-                              <p className="text-left font-medium text-[#2D2D2D]">
-                                选择您的房间类型。
-                              </p>
-                            </div>
-                            <DropDown
-                              theme={room}
-                              setTheme={(newRoom) => setRoom(newRoom as typeof room)}
-                              themes={rooms}
-                            />
-                          </div>
-                          <div className="mt-6 w-full max-w-sm">
-                            <div className="flex items-center space-x-3">
-                              <Image
-                                src="/number-3-white.svg"
-                                width={30}
-                                height={30}
-                                alt="步骤三"
-                              />
-                              <p className="text-left font-medium text-[#2D2D2D]">
-                                上传一张您的房间照片。
-                              </p>
-                            </div>
-                          </div>
-                          <div className="w-full max-w-sm mt-4">
-                            <UploadDropZone />
-                          </div>
-                        </>
-                      )}
-                    {restoredImage && (
-                      <div className="text-xl font-medium mb-4 text-[#2D2D2D]">
-                        这是为您改造后的 <b className="text-[#8B6F47]">{roomLabels[room]}</b> ({themeLabels[theme]}风格)！
-                      </div>
-                    )}
-                    <div className={`${
-                      restoredLoaded ? "visible mt-6 -ml-8" : "invisible"
-                    }`}>
-                      <Toggle
-                        className={`${restoredLoaded ? "visible mb-6" : "invisible"}`}
-                        sideBySide={sideBySide}
-                        setSideBySide={(newVal) => setSideBySide(newVal)}
-                      />
-                    </div>
-                    {restoredLoaded && sideBySide && (
-                      <CompareSlider
-                        original={originalPhoto!}
-                        restored={restoredImage!}
-                      />
-                    )}
-                    {originalPhoto && !restoredImage && (
-                      <Image
-                        alt="原始房间照片"
-                        src={originalPhoto}
-                        className="rounded-2xl h-96 shadow-2xl"
-                        width={475}
-                        height={475}
-                      />
-                    )}
-                    {restoredImage && originalPhoto && !sideBySide && (
-                      <div className="flex sm:space-x-4 sm:flex-row flex-col">
-                        <div>
-                          <h2 className="mb-1 font-medium text-lg text-[#2D2D2D]">原始房间</h2>
-                          <Image
-                            alt="原始房间照片"
-                            src={originalPhoto}
-                            className="rounded-2xl relative w-full h-96 shadow-2xl image-card"
-                            width={475}
-                            height={475}
+                          <DropDown
+                            theme={theme}
+                            setTheme={(newTheme) => setTheme(newTheme as typeof theme)}
+                            themes={themes}
                           />
                         </div>
-                        <div className="sm:mt-0 mt-8">
-                          <h2 className="mb-1 font-medium text-lg text-[#2D2D2D]">生成的房间</h2>
-                          <a href={restoredImage} target="_blank" rel="noreferrer">
-                            <Image
-                              alt="生成后的房间照片"
-                              src={restoredImage}
-                              className="rounded-2xl relative sm:mt-0 mt-2 cursor-zoom-in w-full h-96 shadow-2xl image-card"
-                              width={475}
-                              height={475}
-                              onLoadingComplete={() => setRestoredLoaded(true)}
-                            />
-                          </a>
+
+                        <div className="space-y-4 mt-6">
+                          <div className="flex items-center space-x-3">
+                            <Image src="/number-2-white.svg" width={30} height={30} alt="步骤二" />
+                            <p className="text-left font-medium text-[#2D2D2D]">选择您的房间类型。</p>
+                          </div>
+                          <DropDown
+                            theme={room}
+                            setTheme={(newRoom) => setRoom(newRoom as typeof room)}
+                            themes={rooms}
+                          />
+                        </div>
+
+                        <div className="mt-6">
+                          <div className="flex items-center space-x-3">
+                            <Image src="/number-3-white.svg" width={30} height={30} alt="步骤三" />
+                            <p className="text-left font-medium text-[#2D2D2D]">上传一张您的房间照片。</p>
+                          </div>
+                        </div>
+                        <div className="mt-4">
+                          <UploadDropZone />
+                        </div>
+
+                        {loading && (
+                          <button
+                            disabled
+                            className="btn-warm bg-[#8B6F47] rounded-full text-white font-medium px-6 pt-2 pb-3 mt-6 w-40"
+                          >
+                            <span className="pt-4">
+                              <LoadingDots color="white" style="large" />
+                            </span>
+                          </button>
+                        )}
+                        {error && (
+                          <div
+                            className="bg-red-500/20 border border-red-400/50 text-red-700 px-4 py-3 rounded-xl mt-6 backdrop-blur-sm"
+                            role="alert"
+                          >
+                            <span className="block sm:inline">{error}</span>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          {originalPhoto && !loading && (
+                            <button
+                              onClick={() => {
+                                setOriginalPhoto(null);
+                                setRestoredImage(null);
+                                setRestoredLoaded(false);
+                                setError(null);
+                              }}
+                              className="btn-warm bg-white/80 backdrop-blur-md border border-[#8B6F47]/20 rounded-full text-[#2D2D2D] font-medium px-6 py-2 hover:bg-white"
+                            >
+                              重新生成
+                            </button>
+                          )}
+                          {restoredLoaded && restoredImage && (
+                            <button
+                              onClick={() => {
+                                downloadPhoto(restoredImage, appendNewToName(photoName || "generated-room.png"));
+                              }}
+                              className="btn-warm bg-[#8B6F47] backdrop-blur-md border border-[#8B6F47]/20 rounded-full text-white font-medium px-6 py-2 hover:bg-[#A68B5B]"
+                            >
+                              下载生成的房间图片
+                            </button>
+                          )}
                         </div>
                       </div>
-                    )}
-                    {loading && (
-                      <button
-                        disabled
-                        className="btn-warm bg-[#8B6F47] rounded-full text-white font-medium px-6 pt-2 pb-3 mt-8 w-40"
-                      >
-                        <span className="pt-4">
-                          <LoadingDots color="white" style="large" />
-                        </span>
-                      </button>
-                    )}
-                    {error && (
-                      <div
-                        className="bg-red-500/20 border border-red-400/50 text-red-700 px-4 py-3 rounded-xl mt-8 backdrop-blur-sm"
-                        role="alert"
-                      >
-                        <span className="block sm:inline">{error}</span>
+
+                      <div className="rounded-2xl border border-[#8B6F47]/15 bg-white/55 p-5 backdrop-blur-sm min-h-[620px]">
+                        <h2 className="text-lg font-semibold text-[#2D2D2D] mb-3">生成结果</h2>
+
+                        {restoredImage && (
+                          <div className="text-base font-medium mb-3 text-[#2D2D2D]">
+                            <b className="text-[#8B6F47]">{roomLabels[room]}</b> · {themeLabels[theme]}风格
+                          </div>
+                        )}
+
+                        <div className="relative w-full aspect-[4/3] rounded-2xl border border-[#8B6F47]/20 bg-white/60 overflow-hidden">
+                          {!originalPhoto && !restoredImage && !loading && (
+                            <div className="absolute inset-0 flex items-center justify-center text-sm text-[#8A8A8A]">
+                              右侧将显示新生成的图片
+                            </div>
+                          )}
+
+                          {loading && (
+                            <div className="absolute inset-0 p-3">
+                              <div className="grid h-full grid-cols-2 gap-3">
+                                <Skeleton variant="rounded" className="h-full w-full" />
+                                <Skeleton variant="rounded" className="h-full w-full" />
+                              </div>
+                            </div>
+                          )}
+
+                          {restoredLoaded && sideBySide && originalPhoto && restoredImage && (
+                            <div className="absolute inset-0 p-2">
+                              <CompareSlider
+                                original={originalPhoto}
+                                restored={restoredImage}
+                                className="h-full w-full rounded-xl overflow-hidden"
+                              />
+                            </div>
+                          )}
+
+                          {originalPhoto && !restoredImage && !loading && (
+                            <Image
+                              alt="原始房间照片"
+                              src={originalPhoto}
+                              className="absolute inset-0 h-full w-full object-cover"
+                              fill
+                            />
+                          )}
+
+                          {restoredImage && originalPhoto && !sideBySide && (
+                            <div className="absolute inset-0 grid grid-cols-2 gap-2 p-2">
+                              <div className="relative overflow-hidden rounded-xl bg-white/40">
+                                <Image
+                                  alt="原始房间照片"
+                                  src={originalPhoto}
+                                  className="h-full w-full object-cover"
+                                  fill
+                                />
+                              </div>
+                              <a href={restoredImage} target="_blank" rel="noreferrer" className="relative overflow-hidden rounded-xl bg-white/40">
+                                <Image
+                                  alt="生成后的房间照片"
+                                  src={restoredImage}
+                                  className="h-full w-full cursor-zoom-in object-cover"
+                                  fill
+                                  onLoadingComplete={() => setRestoredLoaded(true)}
+                                />
+                              </a>
+                            </div>
+                          )}
+
+                          {restoredImage && !restoredLoaded && !loading && (
+                            <div className="absolute inset-0 p-3">
+                              <Skeleton variant="rounded" className="h-full w-full" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className={`${restoredLoaded ? "visible mt-4" : "invisible"}`}>
+                          <Toggle
+                            className={`${restoredLoaded ? "visible" : "invisible"}`}
+                            sideBySide={sideBySide}
+                            setSideBySide={(newVal) => setSideBySide(newVal)}
+                          />
+                        </div>
                       </div>
-                    )}
-                    <div className="flex space-x-2 justify-center mb-4">
-                      {originalPhoto && !loading && (
-                        <button
-                          onClick={() => {
-                            setOriginalPhoto(null);
-                            setRestoredImage(null);
-                            setRestoredLoaded(false);
-                            setError(null);
-                          }}
-                          className="btn-warm bg-white/80 backdrop-blur-md border border-[#8B6F47]/20 rounded-full text-[#2D2D2D] font-medium px-6 py-2 mt-8 hover:bg-white"
-                        >
-                          重新生成
-                        </button>
-                      )}
-                      {restoredLoaded && (
-                        <button
-                          onClick={() => {
-                            downloadPhoto(
-                              restoredImage!,
-                              appendNewToName(photoName!)
-                            );
-                          }}
-                          className="btn-warm bg-[#8B6F47] backdrop-blur-md border border-[#8B6F47]/20 rounded-full text-white font-medium px-6 py-2 mt-8 hover:bg-[#A68B5B]"
-                        >
-                          下载生成的房间图片
-                        </button>
-                      )}
-                    </div>
                     </div>
                   </motion.div>
                 )}
@@ -457,8 +480,18 @@ export default function DreamPage() {
           </div>
         </motion.div>
       </main>
-      {/* Footer 只在快速生成模式显示 */}
-      {mode === "generate" && <Footer />}
+      {mode === "generate" && (
+        <div className="fixed bottom-4 left-4 z-40 rounded-xl border border-[#8B6F47]/20 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
+          <div className="text-xs text-[#6B6459]">当前用户：{currentUserName || "用户"}</div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="mt-1 text-xs font-medium text-[#8B6F47] hover:underline"
+          >
+            退出登录
+          </button>
+        </div>
+      )}
     </div>
   );
 }

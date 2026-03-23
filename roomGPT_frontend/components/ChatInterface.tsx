@@ -27,16 +27,13 @@ interface ChatInterfaceProps {
 interface FailedDraft {
   content: string;
   currentRoomImage: File | null;
-  inspirationImage: File | null;
 }
 
 export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [currentRoomImage, setCurrentRoomImage] = useState<File | null>(null);
-  const [inspirationImage, setInspirationImage] = useState<File | null>(null);
   const [currentRoomPreview, setCurrentRoomPreview] = useState<string | null>(null);
-  const [inspirationPreview, setInspirationPreview] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [showQuickScenes, setShowQuickScenes] = useState(false);
   const [pendingRenderJobId, setPendingRenderJobId] = useState<string | null>(null);
@@ -54,14 +51,12 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentRoomInputRef = useRef<HTMLInputElement>(null);
-  const inspirationInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     return () => {
       if (currentRoomPreview) URL.revokeObjectURL(currentRoomPreview);
-      if (inspirationPreview) URL.revokeObjectURL(inspirationPreview);
     };
-  }, [currentRoomPreview, inspirationPreview]);
+  }, [currentRoomPreview]);
 
   useEffect(() => {
     fetchSessionMessages(sessionId)
@@ -153,32 +148,21 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
     setShowQuickScenes(false);
   };
 
-  const updatePreview = (file: File, type: "current" | "inspiration") => {
+  const updatePreview = (file: File) => {
     const preview = URL.createObjectURL(file);
-    if (type === "current") {
-      if (currentRoomPreview) {
-        URL.revokeObjectURL(currentRoomPreview);
-      }
-      setCurrentRoomImage(file);
-      setCurrentRoomPreview(preview);
-    } else {
-      if (inspirationPreview) {
-        URL.revokeObjectURL(inspirationPreview);
-      }
-      setInspirationImage(file);
-      setInspirationPreview(preview);
+    if (currentRoomPreview) {
+      URL.revokeObjectURL(currentRoomPreview);
     }
+    setCurrentRoomImage(file);
+    setCurrentRoomPreview(preview);
   };
 
   const handleSendMessage = async () => {
-    if ((!input.trim() && !currentRoomImage && !inspirationImage) || isSending) return;
+    if ((!input.trim() && !currentRoomImage) || isSending) return;
 
     const outgoingAttachments = [
       currentRoomImage
         ? { id: "current-room", url: URL.createObjectURL(currentRoomImage), label: "当前房间" }
-        : null,
-      inspirationImage
-        ? { id: "inspiration", url: URL.createObjectURL(inspirationImage), label: "灵感图" }
         : null,
     ].filter(Boolean) as NonNullable<ChatMessage["attachments"]>;
 
@@ -191,7 +175,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
     };
 
     const tempMessageId = (Date.now() + 1).toString();
-    const assistantAgentName = currentRoomImage || inspirationImage ? "ProjectCoordinator" : "InfoAgent";
+    const assistantAgentName = currentRoomImage ? "ProjectCoordinator" : "InfoAgent";
 
     setMessages((prev) => [
       ...prev,
@@ -259,9 +243,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
         )
       );
       setCurrentRoomImage(null);
-      setInspirationImage(null);
       setCurrentRoomPreview(null);
-      setInspirationPreview(null);
       setTimeout(() => setActiveAssistantMessageId(null), 1200);
       showToast("回复已生成", "success");
     };
@@ -271,7 +253,6 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
       setFailedDraft({
         content: userMessage.content,
         currentRoomImage,
-        inspirationImage,
       });
       onError?.(errorMessage);
       showToast(errorMessage, "error");
@@ -286,12 +267,11 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
     };
 
     try {
-      if (currentRoomImage || inspirationImage) {
+      if (currentRoomImage) {
         await sendChatWithImageStream(
           userMessage.content,
           {
             currentRoomImage,
-            inspirationImage,
           },
           (content) => {
             accumulatedContent += content;
@@ -346,7 +326,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
         {messages.length === 0 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center py-12">
             <h3 className="text-xl font-semibold text-[#2D2D2D] mb-2">开始您的装修咨询</h3>
-            <p className="text-[#6B6459]">上传当前房间图、灵感图，或直接描述您的装修需求。</p>
+            <p className="text-[#6B6459]">上传当前房间图，或直接描述您的装修需求。</p>
           </motion.div>
         )}
 
@@ -515,7 +495,11 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
 
         {!showQuickScenes && messages.length === 0 && (
           <div className="mb-1.5">
-            <QuickPrompts onSelect={handleSelectQuickPrompt} />
+            <QuickPrompts
+              onSelect={handleSelectQuickPrompt}
+              onSceneToggle={() => setShowQuickScenes((prev) => !prev)}
+              sceneActive={showQuickScenes}
+            />
           </div>
         )}
 
@@ -543,65 +527,6 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
             </div>
           )}
 
-          {inspirationPreview && (
-            <div className="relative inline-flex max-w-[220px] items-center gap-2 rounded-full border border-[#8B6F47]/18 bg-white/85 px-2.5 py-1.5 shadow-sm">
-              <img
-                src={inspirationPreview}
-                alt="灵感图片预览"
-                className="h-7 w-7 rounded-full object-cover ring-1 ring-[#8B6F47]/10"
-              />
-              <span className="truncate text-xs font-medium text-[#5A5A5A]">灵感图</span>
-              <button
-                onClick={() => {
-                  if (inspirationPreview) {
-                    URL.revokeObjectURL(inspirationPreview);
-                  }
-                  setInspirationImage(null);
-                  setInspirationPreview(null);
-                }}
-                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#F4ECE3] text-[11px] text-[#8B6F47] transition hover:bg-[#EADBC8]"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          <button
-            onClick={() => currentRoomInputRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-full border border-[#8B6F47]/20 bg-white/70 px-3 py-1.5 text-xs text-[#5A5A5A] shadow-sm transition hover:border-[#8B6F47]/35 hover:bg-white hover:text-[#2D2D2D] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isSending}
-            type="button"
-          >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#F5EFE6] text-xs">
-              🏠
-            </span>
-            <span className="leading-4">上传当前房间</span>
-          </button>
-          <button
-            onClick={() => inspirationInputRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-full border border-[#8B6F47]/20 bg-white/70 px-3 py-1.5 text-xs text-[#5A5A5A] shadow-sm transition hover:border-[#8B6F47]/35 hover:bg-white hover:text-[#2D2D2D] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isSending}
-            type="button"
-          >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#EEF6EF] text-xs">
-              🎨
-            </span>
-            <span className="leading-4">上传灵感图</span>
-          </button>
-          <button
-            onClick={() => setShowQuickScenes(!showQuickScenes)}
-            className="inline-flex items-center gap-2 rounded-full border border-[#8B6F47]/20 bg-white/70 px-3 py-1.5 text-xs text-[#5A5A5A] shadow-sm transition hover:border-[#8B6F47]/35 hover:bg-white hover:text-[#2D2D2D]"
-            type="button"
-          >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#F3EEE5]">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2v12a2 2 0 01-2 2h12a2 2 0 01-2-2V6a2 2 0 01-2-2m2 4v2a2 2 0 002 2h12a2 2 0 002-2v-2M4 14h16" />
-              </svg>
-            </span>
-            <span className="leading-4">{showQuickScenes ? "返回输入" : "场景选择"}</span>
-          </button>
         </div>
 
         <div className="flex items-end gap-2.5">
@@ -611,8 +536,8 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="输入您的问题或描述装修需求..."
-              className="w-full min-h-[56px] bg-white/85 text-[#2D2D2D] rounded-2xl px-4 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-[#8B6F47]/40 transition placeholder:text-[#8A8A8A] border border-[#8B6F47]/15"
-              rows={2}
+              className="w-full min-h-[44px] leading-5 bg-white/85 text-[#2D2D2D] rounded-2xl px-4 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-[#8B6F47]/40 transition placeholder:text-[#8A8A8A] border border-[#8B6F47]/15"
+              rows={1}
               disabled={isSending}
             />
 
@@ -621,18 +546,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
               ref={currentRoomInputRef}
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) updatePreview(file, "current");
-              }}
-              accept="image/*"
-              className="hidden"
-              disabled={isSending}
-            />
-            <input
-              type="file"
-              ref={inspirationInputRef}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) updatePreview(file, "inspiration");
+                if (file) updatePreview(file);
               }}
               accept="image/*"
               className="hidden"
@@ -641,15 +555,37 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
           </div>
 
           <button
+            onClick={() => currentRoomInputRef.current?.click()}
+            disabled={isSending}
+            title="上传当前房间图片"
+            type="button"
+            className={`h-[56px] w-[56px] inline-flex items-center justify-center rounded-2xl border transition ${
+              isSending
+                ? "bg-white/60 text-[#8A8A8A] border-[#8B6F47]/15 cursor-not-allowed"
+                : "bg-white/85 text-[#6B6459] border-[#8B6F47]/20 hover:bg-white hover:text-[#2D2D2D]"
+            }`}
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <circle cx="9" cy="10" r="1.5" />
+              <path d="M21 15l-4-4-6 6-2-2-4 4" />
+            </svg>
+          </button>
+
+          <button
             onClick={handleSendMessage}
-            disabled={isSending || (!input.trim() && !currentRoomImage && !inspirationImage)}
-            className={`min-w-[82px] self-stretch rounded-2xl px-5 py-3 text-sm font-medium transition-all duration-300 ${
-              isSending || (!input.trim() && !currentRoomImage && !inspirationImage)
+            disabled={isSending || (!input.trim() && !currentRoomImage)}
+            title="发送"
+            className={`h-[56px] w-[56px] inline-flex items-center justify-center rounded-2xl transition-all duration-300 ${
+              isSending || (!input.trim() && !currentRoomImage)
                 ? "bg-white/60 text-[#8A8A8A] cursor-not-allowed"
                 : "bg-gradient-to-r from-[#8B6F47] to-[#A68B5B] text-white shadow-lg shadow-[#8B6F47]/25 hover:shadow-[#8B6F47]/40"
             }`}
           >
-            {isSending ? "发送中" : "发送"}
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 2L11 13" />
+              <path d="M22 2L15 22l-4-9-9-4 20-7z" />
+            </svg>
           </button>
         </div>
       </div>

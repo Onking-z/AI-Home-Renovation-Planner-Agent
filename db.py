@@ -32,6 +32,7 @@ def init_db() -> None:
                     session_id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
                     title TEXT,
+                    pinned INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -82,6 +83,10 @@ def init_db() -> None:
                 ON render_jobs(session_id, created_at);
                 """
             )
+            columns = conn.execute("PRAGMA table_info(sessions)").fetchall()
+            column_names = {row["name"] for row in columns}
+            if "pinned" not in column_names:
+                conn.execute("ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
             conn.commit()
         finally:
             conn.close()
@@ -199,7 +204,7 @@ def list_sessions(user_id: str) -> list[dict[str, Any]]:
         try:
             rows = conn.execute(
                 """
-                SELECT s.session_id, s.title, s.created_at, s.updated_at,
+                SELECT s.session_id, s.title, s.pinned, s.created_at, s.updated_at,
                        (
                            SELECT m.content
                            FROM messages m
@@ -223,11 +228,66 @@ def list_sessions(user_id: str) -> list[dict[str, Any]]:
                        ) AS latest_message
                 FROM sessions s
                 WHERE s.user_id = ?
-                ORDER BY s.updated_at DESC
+                ORDER BY s.pinned DESC, s.updated_at DESC
                 """,
                 (user_id,),
             ).fetchall()
             return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+
+def set_session_pinned(session_id: str, user_id: str, pinned: bool) -> bool:
+    with _LOCK:
+        conn = get_connection()
+        try:
+            cursor = conn.execute(
+                """
+                UPDATE sessions
+                SET pinned = ?, updated_at = ?
+                WHERE session_id = ? AND user_id = ?
+                """,
+                (1 if pinned else 0, utc_now(), session_id, user_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+
+def delete_session(session_id: str, user_id: str) -> bool:
+    with _LOCK:
+        conn = get_connection()
+        try:
+            exists = conn.execute(
+                "SELECT 1 FROM sessions WHERE session_id = ? AND user_id = ?",
+                (session_id, user_id),
+            ).fetchone()
+            if exists:
+                conn.execute(
+                    "DELETE FROM messages WHERE session_id = ? AND user_id = ?",
+                    (session_id, user_id),
+                )
+                conn.execute(
+                    "DELETE FROM assets WHERE session_id = ? AND user_id = ?",
+                    (session_id, user_id),
+                )
+                conn.execute(
+                    "DELETE FROM render_jobs WHERE session_id = ? AND user_id = ?",
+                    (session_id, user_id),
+                )
+                conn.execute(
+                    "DELETE FROM sessions WHERE session_id = ? AND user_id = ?",
+                    (session_id, user_id),
+                )
+            else:
+                # Fallback for legacy/migrated rows with mismatched user_id.
+                conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+                conn.execute("DELETE FROM assets WHERE session_id = ?", (session_id,))
+                conn.execute("DELETE FROM render_jobs WHERE session_id = ?", (session_id,))
+                conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+            conn.commit()
+            return True
         finally:
             conn.close()
 

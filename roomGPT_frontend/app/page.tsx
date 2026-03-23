@@ -2,12 +2,13 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Footer from "../components/Footer";
 import Header from "../components/Header";
 import LumiereIntro from "../components/LumiereIntro";
 import PairedCarousel, { PairedSlide } from "../components/PairedCarousel";
 import SquigglyLines from "../components/SquigglyLines";
+import { getCurrentUser } from "../utils/auth";
 
 const pairedSlides: PairedSlide[] = [
   {
@@ -115,6 +116,14 @@ const agentShowcase = [
 
 export default function HomePage() {
   const [showIntro, setShowIntro] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setIsLoggedIn(Boolean(getCurrentUser()));
+    sync();
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
 
   return (
     <div className="home-cinematic relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
@@ -163,7 +172,7 @@ export default function HomePage() {
         >
           <Link
             className="btn-warm mt-8 inline-flex rounded-2xl bg-[#8B6F47] px-8 py-4 text-lg font-semibold text-white transition-all duration-300 hover:bg-[#A68B5B]"
-            href="/dream"
+            href={isLoggedIn ? "/dream" : "/auth?redirect=/dream"}
           >
             开始设计你的空间
           </Link>

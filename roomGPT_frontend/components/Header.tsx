@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { getCurrentUser } from "../utils/auth";
 
 interface HeaderProps {
   variant?: "full" | "minimal";
@@ -11,6 +12,7 @@ interface HeaderProps {
 
 export default function Header({ variant = "full" }: HeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -19,6 +21,13 @@ export default function Header({ variant = "full" }: HeaderProps) {
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const sync = () => setIsLoggedIn(Boolean(getCurrentUser()));
+    sync();
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
   }, []);
 
   return (
@@ -61,7 +70,7 @@ export default function Header({ variant = "full" }: HeaderProps) {
               首页
             </Link>
             <Link
-              href="/dream"
+              href={isLoggedIn ? "/dream" : "/auth?redirect=/dream"}
               className="text-sm font-medium text-[#5A5A5A] hover:text-[#8B6F47] transition-colors duration-300 link-underline"
             >
               设计空间
@@ -75,9 +84,12 @@ export default function Header({ variant = "full" }: HeaderProps) {
           </nav>
         )}
 
-        <div className="text-[#8A8A8A] text-sm hidden sm:block">
-          让每个家都有温度
-        </div>
+        <Link
+          href={isLoggedIn ? "/dream" : "/auth?redirect=/dream"}
+          className="hidden sm:inline-flex items-center rounded-lg border border-[#8B6F47]/25 bg-white/70 px-4 py-2 text-sm font-medium text-[#6B6459] hover:bg-white hover:text-[#8B6F47] transition-colors"
+        >
+          登录
+        </Link>
       </div>
     </header>
   );

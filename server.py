@@ -16,6 +16,7 @@ from agent import project_coordinator, root_agent
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from db import (
     create_render_job,
+    delete_session,
     ensure_session,
     get_render_job,
     get_messages,
@@ -23,6 +24,7 @@ from db import (
     list_sessions,
     save_asset,
     save_message,
+    set_session_pinned,
     session_state_snapshot,
     update_render_job,
 )
@@ -121,6 +123,7 @@ class SessionResponse(BaseModel):
     session_id: str
     title: Optional[str] = None
     latest_user_message: Optional[str] = None
+    pinned: bool = False
     created_at: str
     updated_at: str
 
@@ -219,9 +222,7 @@ async def prepare_message_content(
     user_id: str,
     session_id: str,
     current_room_image: UploadFile | None = None,
-    inspiration_image: UploadFile | None = None,
     image: UploadFile | None = None,
-    image_type: str | None = None,
 ):
     from google.genai import types
 
@@ -229,11 +230,8 @@ async def prepare_message_content(
     uploaded_assets: list[dict[str, str]] = []
     session = await ensure_adk_session(user_id=user_id, session_id=session_id)
 
-    if image and not current_room_image and not inspiration_image:
-        if image_type == "inspiration":
-            inspiration_image = image
-        else:
-            current_room_image = image
+    if image and not current_room_image:
+        current_room_image = image
 
     if current_room_image:
         artifact_filename, version, image_part = await save_uploaded_asset(
@@ -246,22 +244,6 @@ async def prepare_message_content(
         session.state["latest_current_room_image"] = artifact_filename
         session.state.setdefault("reference_images", {})[artifact_filename] = {
             "type": "current_room",
-            "version": version,
-        }
-        parts.append(image_part)
-
-    if inspiration_image:
-        artifact_filename, version, image_part = await save_uploaded_asset(
-            file=inspiration_image,
-            asset_type="inspiration",
-            user_id=user_id,
-            session_id=session_id,
-        )
-        uploaded_assets.append({"filename": artifact_filename, "asset_type": "inspiration"})
-        session.state["latest_inspiration_image"] = artifact_filename
-        session.state["latest_reference_image"] = artifact_filename
-        session.state.setdefault("reference_images", {})[artifact_filename] = {
-            "type": "inspiration",
             "version": version,
         }
         parts.append(image_part)
@@ -584,6 +566,25 @@ async def list_session_endpoint(user_id: str = DEFAULT_USER):
     return list_sessions(user_id=user_id)
 
 
+@app.post("/api/sessions/{session_id}/pin")
+async def pin_session_endpoint(
+    session_id: str,
+    user_id: str = Form(DEFAULT_USER),
+    pinned: bool = Form(...),
+):
+    success = set_session_pinned(session_id=session_id, user_id=user_id, pinned=pinned)
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return {"session_id": session_id, "pinned": pinned}
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session_endpoint(session_id: str, user_id: str = DEFAULT_USER):
+    # Keep deletion idempotent for better frontend UX.
+    delete_session(session_id=session_id, user_id=user_id)
+    return {"session_id": session_id, "deleted": True}
+
+
 @app.get("/api/sessions/{session_id}/messages", response_model=list[MessageResponse])
 async def get_session_messages(request: Request, session_id: str, user_id: str = DEFAULT_USER):
     messages = get_messages(session_id=session_id, user_id=user_id)
@@ -761,9 +762,7 @@ async def chat_with_image_endpoint(
     request: Request,
     message: str = Form(...),
     current_room_image: UploadFile | None = File(None),
-    inspiration_image: UploadFile | None = File(None),
     image: UploadFile | None = File(None),
-    image_type: str = Form("current_room"),
     user_id: str = Form(DEFAULT_USER),
     session_id: str = Form(DEFAULT_SESSION),
 ):
@@ -777,9 +776,7 @@ async def chat_with_image_endpoint(
             user_id=user_id,
             session_id=session_id,
             current_room_image=current_room_image,
-            inspiration_image=inspiration_image,
             image=image,
-            image_type=image_type,
         )
         events = runner.run_async(
             user_id=user_id,
@@ -811,9 +808,7 @@ async def chat_with_image_stream_endpoint(
     request: Request,
     message: str = Form(...),
     current_room_image: UploadFile | None = File(None),
-    inspiration_image: UploadFile | None = File(None),
     image: UploadFile | None = File(None),
-    image_type: str = Form("current_room"),
     user_id: str = Form(DEFAULT_USER),
     session_id: str = Form(DEFAULT_SESSION),
 ):
@@ -827,9 +822,7 @@ async def chat_with_image_stream_endpoint(
             user_id=user_id,
             session_id=session_id,
             current_room_image=current_room_image,
-            inspiration_image=inspiration_image,
             image=image,
-            image_type=image_type,
         )
         events = runner.run_async(
             user_id=user_id,
@@ -876,7 +869,7 @@ async def chat_with_image_stream_endpoint(
                 assistant_message=assistant_message,
                 result_filename=None,
             )
-            if current_room_image or inspiration_image or image:
+            if current_room_image or image:
                 job_id = await queue_render_job(
                     user_id=user_id,
                     session_id=session_id,

@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { fetchSessions } from "../utils/api";
+import { deleteSession, fetchSessions, pinSession } from "../utils/api";
 import { SessionSummary } from "../types/chat";
+import { getCurrentUser, logout } from "../utils/auth";
+import { useRouter } from "next/navigation";
 
 interface ChatHistoryPanelProps {
   isOpen: boolean;
@@ -18,11 +20,26 @@ export default function ChatHistoryPanel({
   onSelectSession,
   onNewChat,
 }: ChatHistoryPanelProps) {
+  const router = useRouter();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [currentUserName, setCurrentUserName] = useState("用户");
+  const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(null);
+  const [pendingDeleteSession, setPendingDeleteSession] = useState<SessionSummary | null>(null);
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     fetchSessions().then(setSessions).catch(() => setSessions([]));
   }, [currentSessionId]);
+
+  useEffect(() => {
+    setCurrentUserName(getCurrentUser()?.name || "用户");
+  }, []);
+
+  useEffect(() => {
+    if (!actionError) return;
+    const timer = window.setTimeout(() => setActionError(""), 2000);
+    return () => window.clearTimeout(timer);
+  }, [actionError]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -56,9 +73,56 @@ export default function ChatHistoryPanel({
     const summary = clampText(session.latest_message || session.latest_user_message, "");
     const title = getSessionTitle(session);
     if (!summary || summary === title) {
-      return "点击继续这段装修对话";
+      return "";
     }
     return summary;
+  };
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/auth?redirect=/dream");
+  };
+
+  const reloadSessions = async () => {
+    try {
+      const next = await fetchSessions();
+      setSessions(next);
+    } catch {
+      setSessions([]);
+    }
+  };
+
+  const handleTogglePinned = async (session: SessionSummary) => {
+    try {
+      await pinSession(session.session_id, !Boolean(session.pinned));
+      await reloadSessions();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "置顶操作失败");
+    } finally {
+      setActiveMenuSessionId(null);
+    }
+  };
+
+  const handleDeleteSession = (session: SessionSummary) => {
+    setPendingDeleteSession(session);
+    setActiveMenuSessionId(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteSession) return;
+    const target = pendingDeleteSession;
+    setPendingDeleteSession(null);
+    try {
+      await deleteSession(target.session_id);
+      await reloadSessions();
+      if (target.session_id === currentSessionId) {
+        onNewChat?.();
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "删除会话失败");
+    } finally {
+      setPendingDeleteSession(null);
+    }
   };
 
   return (
@@ -77,6 +141,11 @@ export default function ChatHistoryPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
+        {actionError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] text-red-700">
+            {actionError}
+          </div>
+        )}
         {sessions.length === 0 ? (
           <div className="text-center py-8">
             <div className="text-3xl mb-2 text-[#B1A99B]">📭</div>
@@ -84,31 +153,116 @@ export default function ChatHistoryPanel({
           </div>
         ) : (
           sessions.map((session, index) => (
-            <motion.button
+            <motion.div
               key={session.session_id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
-              onClick={() => onSelectSession(session.session_id)}
-              className={`w-full p-2 rounded-lg text-left transition border ${
+              className={`w-full px-2.5 py-2 rounded-xl text-left transition border ${
                 session.session_id === currentSessionId
                   ? "bg-white border-[#8B6F47]/40 shadow-sm"
                   : "bg-white/70 hover:bg-white border-[#8B6F47]/10 hover:border-[#8B6F47]/30"
               }`}
             >
-              <p className="text-xs font-semibold text-[#2D2D2D] line-clamp-1">
-                {getSessionTitle(session)}
-              </p>
-              <p className="mt-1 text-[11px] leading-5 text-[#6B6459] line-clamp-2 min-h-[2.5rem]">
-                {getSessionSummary(session)}
-              </p>
-              <span className="mt-2 inline-block text-[10px] text-[#8A8A8A]">
-                {formatDate(session.updated_at)}
-              </span>
-            </motion.button>
+              <div className="flex items-start justify-between gap-2">
+                <button
+                  onClick={() => onSelectSession(session.session_id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <p className="text-[14px] font-semibold text-[#2D2D2D] leading-5 line-clamp-1">
+                    {session.pinned ? "📌 " : ""}
+                    {getSessionTitle(session)}
+                  </p>
+                  <p className="mt-0.5 text-[12px] leading-4 text-[#6B6459] line-clamp-1">
+                    {getSessionSummary(session)}
+                  </p>
+                  <span className="mt-1.5 inline-block text-[11px] text-[#8A8A8A]">
+                    {formatDate(session.updated_at)}
+                  </span>
+                </button>
+
+                <div className="relative flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveMenuSessionId((prev) =>
+                        prev === session.session_id ? null : session.session_id
+                      )
+                    }
+                    className="h-7 w-7 rounded-md hover:bg-[#F4ECE3] text-[#8B6F47] inline-flex items-center justify-center"
+                    title="更多操作"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                      <circle cx="5" cy="12" r="2" />
+                      <circle cx="12" cy="12" r="2" />
+                      <circle cx="19" cy="12" r="2" />
+                    </svg>
+                  </button>
+
+                  {activeMenuSessionId === session.session_id && (
+                    <div className="absolute right-0 z-20 mt-1 w-28 rounded-lg border border-[#8B6F47]/15 bg-white shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePinned(session)}
+                        className="w-full px-3 py-2 text-left text-xs text-[#2D2D2D] hover:bg-[#F7F1E7] rounded-t-lg"
+                      >
+                        {session.pinned ? "取消置顶" : "置顶"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSession(session)}
+                        className="w-full px-3 py-2 text-left text-xs text-red-700 hover:bg-red-50 rounded-b-lg"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
           ))
         )}
       </div>
+      <div className="border-t border-[#8B6F47]/15 p-3">
+        <div className="text-xs text-[#6B6459]">当前用户：{currentUserName}</div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="mt-1 text-xs font-medium text-[#8B6F47] hover:underline"
+        >
+          退出登录
+        </button>
+      </div>
+
+      {pendingDeleteSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-[#8B6F47]/20 bg-white p-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-[#2D2D2D]">确认删除</h3>
+            <p className="mt-2 text-xs leading-5 text-[#6B6459]">
+              确认删除这条历史对话吗？删除后不可恢复。
+            </p>
+            <p className="mt-1 text-xs text-[#8A8A8A] line-clamp-1">
+              {getSessionTitle(pendingDeleteSession)}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteSession(null)}
+                className="rounded-lg border border-[#8B6F47]/20 px-3 py-1.5 text-xs text-[#6B6459] hover:bg-[#F7F1E7]"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-700"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
