@@ -250,6 +250,8 @@ async def prepare_message_content(
     message: str,
     user_id: str,
     session_id: str,
+    current_room_images: list[UploadFile] | None = None,
+    inspiration_images: list[UploadFile] | None = None,
     current_room_image: UploadFile | None = None,
     image: UploadFile | None = None,
 ):
@@ -259,20 +261,31 @@ async def prepare_message_content(
     uploaded_assets: list[dict[str, str]] = []
     session = await ensure_adk_session(user_id=user_id, session_id=session_id)
 
-    if image and not current_room_image:
-        current_room_image = image
-
+    upload_queue: list[tuple[UploadFile, str]] = []
+    if current_room_images:
+        upload_queue.extend([(file, "current_room") for file in current_room_images if file is not None])
+    if inspiration_images:
+        upload_queue.extend([(file, "inspiration") for file in inspiration_images if file is not None])
     if current_room_image:
+        upload_queue.append((current_room_image, "current_room"))
+    elif image:
+        upload_queue.append((image, "current_room"))
+
+    for upload, asset_type in upload_queue:
         artifact_filename, version, image_part = await save_uploaded_asset(
-            file=current_room_image,
-            asset_type="current_room",
+            file=upload,
+            asset_type=asset_type,
             user_id=user_id,
             session_id=session_id,
         )
-        uploaded_assets.append({"filename": artifact_filename, "asset_type": "current_room"})
-        session.state["latest_current_room_image"] = artifact_filename
+        uploaded_assets.append({"filename": artifact_filename, "asset_type": asset_type})
+        if asset_type == "current_room":
+            session.state["latest_current_room_image"] = artifact_filename
+        elif asset_type == "inspiration":
+            session.state["latest_inspiration_image"] = artifact_filename
+            session.state["latest_reference_image"] = artifact_filename
         session.state.setdefault("reference_images", {})[artifact_filename] = {
-            "type": "current_room",
+            "type": asset_type,
             "version": version,
         }
         parts.append(image_part)
@@ -1136,6 +1149,8 @@ async def chat_stream_endpoint(payload: ChatRequest):
 async def chat_with_image_endpoint(
     request: Request,
     message: str = Form(...),
+    current_room_images: list[UploadFile] | None = File(None),
+    inspiration_images: list[UploadFile] | None = File(None),
     current_room_image: UploadFile | None = File(None),
     image: UploadFile | None = File(None),
     user_id: str = Form(DEFAULT_USER),
@@ -1143,7 +1158,7 @@ async def chat_with_image_endpoint(
 ):
     if IMAGE_GENERATION_MODE == "local_mock" and user_id == QUICK_GENERATE_USER:
         ensure_session(session_id=session_id, user_id=user_id, title=message[:80] or "快速生成")
-        uploaded_image = current_room_image or image
+        uploaded_image = (current_room_images or [None])[0] or (inspiration_images or [None])[0] or current_room_image or image
         mapping = resolve_local_render_mapping(
             original_filename=getattr(uploaded_image, "filename", "") if uploaded_image else "",
             style=extract_style_from_message(message),
@@ -1174,11 +1189,13 @@ async def chat_with_image_endpoint(
     await ensure_adk_session(user_id=user_id, session_id=session_id)
 
     try:
-        effective_message = message if (current_room_image or image) else build_non_image_guarded_prompt(message)
+        effective_message = message if ((current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image) else build_non_image_guarded_prompt(message)
         message_content, _uploaded_assets = await prepare_message_content(
             message=effective_message,
             user_id=user_id,
             session_id=session_id,
+            current_room_images=current_room_images,
+            inspiration_images=inspiration_images,
             current_room_image=current_room_image,
             image=image,
         )
@@ -1219,6 +1236,8 @@ async def chat_with_image_endpoint(
 async def chat_with_image_stream_endpoint(
     request: Request,
     message: str = Form(...),
+    current_room_images: list[UploadFile] | None = File(None),
+    inspiration_images: list[UploadFile] | None = File(None),
     current_room_image: UploadFile | None = File(None),
     image: UploadFile | None = File(None),
     user_id: str = Form(DEFAULT_USER),
@@ -1229,11 +1248,13 @@ async def chat_with_image_stream_endpoint(
     await ensure_adk_session(user_id=user_id, session_id=session_id)
 
     try:
-        effective_message = message if (current_room_image or image) else build_non_image_guarded_prompt(message)
+        effective_message = message if ((current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image) else build_non_image_guarded_prompt(message)
         message_content, _uploaded_assets = await prepare_message_content(
             message=effective_message,
             user_id=user_id,
             session_id=session_id,
+            current_room_images=current_room_images,
+            inspiration_images=inspiration_images,
             current_room_image=current_room_image,
             image=image,
         )
@@ -1291,7 +1312,7 @@ async def chat_with_image_stream_endpoint(
                 result_filename=None,
                 references=references,
             )
-            if current_room_image or image:
+            if (current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image:
                 job_id = await queue_render_job(
                     user_id=user_id,
                     session_id=session_id,

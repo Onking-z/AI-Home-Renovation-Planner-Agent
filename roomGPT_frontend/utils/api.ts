@@ -21,7 +21,8 @@ interface StreamChunk {
 }
 
 interface ImagePayload {
-  currentRoomImage?: File | null;
+  currentRoomImages?: File[];
+  inspirationImages?: File[];
 }
 
 function buildChatMessage(data: {
@@ -246,9 +247,12 @@ export async function sendChatWithImageStream(
     formData.append("user_id", DEFAULT_USER_ID);
     formData.append("session_id", sessionId);
 
-    if (images.currentRoomImage) {
-      formData.append("current_room_image", images.currentRoomImage);
-    }
+    (images.currentRoomImages || []).forEach((file) => {
+      formData.append("current_room_images", file);
+    });
+    (images.inspirationImages || []).forEach((file) => {
+      formData.append("inspiration_images", file);
+    });
     const response = await fetch(`${API_BASE_URL}/api/chat-with-image/stream`, {
       method: "POST",
       body: formData,
@@ -357,7 +361,7 @@ export async function mapLocalRenderImage(
   });
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || error.message || "本地图片映射失败");
+    throw new Error(error.detail || error.message || "图片生成失败");
   }
   return await response.json();
 }

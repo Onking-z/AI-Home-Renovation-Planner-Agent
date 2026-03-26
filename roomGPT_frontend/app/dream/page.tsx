@@ -36,6 +36,7 @@ export default function DreamPage() {
   const [restoredImage, setRestoredImage] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [restoredLoaded, setRestoredLoaded] = useState<boolean>(false);
+  const [loadingStage, setLoadingStage] = useState<string>("正在生成图片...");
   const [error, setError] = useState<string | null>(null);
   const [photoName, setPhotoName] = useState<string | null>(null);
   const [theme, setTheme] = useState<themeType>("Modern");
@@ -65,6 +66,24 @@ export default function DreamPage() {
     return () => window.clearTimeout(timer);
   }, [error]);
 
+  useEffect(() => {
+    if (!loading) return;
+
+    const stages = [
+      "正在生成图片...",
+      "正在准备预览结果...",
+    ];
+    let index = 0;
+    setLoadingStage(stages[0]);
+
+    const timer = window.setInterval(() => {
+      index = (index + 1) % stages.length;
+      setLoadingStage(stages[index]);
+    }, 900);
+
+    return () => window.clearInterval(timer);
+  }, [loading]);
+
   // 开始新对话
   const handleNewChat = () => {
     const sessionId = createAndStoreSessionId();
@@ -76,6 +95,7 @@ export default function DreamPage() {
     setRestoredImage(null);
     setRestoredLoaded(false);
     setLoading(true);
+    setLoadingStage("正在生成图片...");
     setError(null);
     setPreviewImageUrl(null);
   };
@@ -383,8 +403,39 @@ export default function DreamPage() {
                             <div className="absolute inset-0 p-3">
                               <div className="relative h-full w-full overflow-hidden rounded-2xl">
                                 <Skeleton variant="rounded" className="h-full w-full" />
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                  <LoadingDots color="#A88A5A" style="large" />
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/18 via-transparent to-[#8B6F47]/10" />
+                                <div className="absolute inset-0 flex items-center justify-center p-6">
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    className="flex w-full max-w-sm flex-col items-center rounded-3xl border border-white/60 bg-white/78 px-6 py-7 text-center shadow-[0_20px_60px_rgba(139,111,71,0.18)] backdrop-blur-md"
+                                  >
+                                    <motion.div
+                                      animate={{ rotate: 360 }}
+                                      transition={{ repeat: Infinity, duration: 1.8, ease: "linear" }}
+                                      className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[#8B6F47]/20 bg-[#F8F1E6]"
+                                    >
+                                      <svg className="h-7 w-7 text-[#8B6F47]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 018-8" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20 12a8 8 0 01-8 8" opacity="0.35" />
+                                      </svg>
+                                    </motion.div>
+                                    <div className="text-base font-semibold text-[#2D2D2D]">
+                                      本地图片加载中
+                                    </div>
+                                    <motion.div
+                                      key={loadingStage}
+                                      initial={{ opacity: 0, y: 6 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      exit={{ opacity: 0, y: -6 }}
+                                      className="mt-2 text-sm text-[#6B6459]"
+                                    >
+                                      {loadingStage}
+                                    </motion.div>
+                                    <div className="mt-4">
+                                      <LoadingDots color="#A88A5A" style="large" />
+                                    </div>
+                                  </motion.div>
                                 </div>
                               </div>
                             </div>
