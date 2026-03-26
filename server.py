@@ -779,7 +779,6 @@ def persist_chat_records(
         role="assistant",
         content=assistant_message,
         image_filename=result_filename,
-        references=references,
     )
 
 
