@@ -222,6 +222,11 @@ export default function DreamPage() {
       </header>
       {/* 温暖动态背景层 */}
       <div className="dream-background fixed inset-0 -z-10 pointer-events-none">
+        {/* 网格纹理 */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{
+          backgroundImage: 'linear-gradient(#e8e4df 1px, transparent 1px), linear-gradient(90deg, #e8e4df 1px, transparent 1px)',
+          backgroundSize: '20px 20px'
+        }} />
         {/* 背景由 CSS 控制 */}
         <div className="absolute inset-0">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-amber-600/[0.08] rounded-full blur-3xl animate-pulse" style={{ animationDelay: "0s" }} />
@@ -312,8 +317,17 @@ export default function DreamPage() {
                 ) : (
                   // 快速生成模式
                   <motion.div className="w-full h-full overflow-y-auto px-4 pt-8 pb-6 sm:px-6">
-                    <div className="mx-auto grid w-full max-w-7xl gap-6 lg:grid-cols-[minmax(360px,520px)_1fr] lg:items-start">
-                      <div className="rounded-xl border border-[#bdb3a5]/25 bg-[#fcf9f8] p-6 shadow-[0_2px_8px_rgba(189,179,165,0.08)] transition-all duration-300 hover:shadow-[0_4px_16px_rgba(189,179,165,0.12)] hover:-translate-y-0.5">
+                    <div className="mx-auto grid w-full max-w-7xl gap-6 lg:grid-cols-[minmax(360px,520px)_1fr] lg:items-start relative">
+                      {/* 左上角装饰 */}
+                      <div className="absolute -top-2 -left-2 w-8 h-8 border-l border-t border-[#8B6F47]/10" />
+
+                      {/* 右下角装饰 */}
+                      <div className="absolute -bottom-2 -right-2 w-8 h-8 border-r border-b border-[#8B6F47]/10" />
+
+                      <div className="rounded-xl border border-[#bdb3a5]/25 bg-[#fcf9f8] p-6 shadow-[0_2px_8px_rgba(189,179,165,0.08)] transition-all duration-300 hover:shadow-[0_4px_16px_rgba(189,179,165,0.12)] hover:-translate-y-0.5 relative group overflow-hidden">
+                        {/* 悬浮时显示的装饰圆点 */}
+                        <div className="absolute top-3 right-3 w-1.5 h-1.5 rounded-full bg-[#8B6F47]/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        <div className="absolute bottom-3 right-3 w-1.5 h-1.5 rounded-full bg-[#8B6F47]/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                         {/* 流式步骤指示器 */}
                         <div className="mb-6 flex items-center gap-2">
                           <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-semibold transition-all border-2 ${
@@ -361,7 +375,10 @@ export default function DreamPage() {
                           />
                         </div>
 
-                        <div className="space-y-4 mt-6">
+                        {/* 分隔线 */}
+                        <div className="h-px w-full bg-gradient-to-r from-transparent via-[#bdb3a5]/20 to-transparent" />
+
+                        <div className="space-y-4 mt-6 group">
                           <div className="flex items-center space-x-3">
                             <div className={`relative transition-all ${room ? "opacity-100 scale-105" : "opacity-60"}`}>
                               <Image src="/number-2-accent.svg" width={28} height={28} alt="步骤二" />
@@ -379,7 +396,10 @@ export default function DreamPage() {
                           />
                         </div>
 
-                        <div className="mt-6">
+                        {/* 分隔线 */}
+                        <div className="h-px w-full bg-gradient-to-r from-transparent via-[#bdb3a5]/20 to-transparent" />
+
+                        <div className="mt-6 group">
                           <div className="flex items-center space-x-3">
                             <div className={`relative transition-all ${originalPhoto ? "opacity-100 scale-105" : "opacity-60"}`}>
                               <Image src="/number-3-accent.svg" width={28} height={28} alt="步骤三" />
@@ -453,8 +473,17 @@ export default function DreamPage() {
                             <div className="absolute inset-0 p-3">
                               <div className="relative h-full w-full overflow-hidden rounded-2xl">
                                 <Skeleton variant="rounded" className="h-full w-full" />
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                  <LoadingDots color="#A88A5A" style="large" />
+                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                  <div className="mb-3">
+                                    <div className="relative">
+                                      <div className="w-10 h-10 border-2 border-[#8B6F47]/20 border-t-[#8B6F47] rounded-full animate-spin">
+                                        <div className="absolute inset-2 flex items-center justify-center">
+                                          <div className="w-2 h-2 bg-[#8B6F47]/60 rounded-full" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs text-[#9f8370]/60 tracking-wider uppercase">Generating...</p>
                                 </div>
                               </div>
                             </div>

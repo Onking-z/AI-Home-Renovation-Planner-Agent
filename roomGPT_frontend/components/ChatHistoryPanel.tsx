@@ -115,6 +115,7 @@ export default function ChatHistoryPanel({
   return (
     <div className="h-full flex flex-col bg-[#fcf9f8] border-r border-[#bdb3a5]/30">
       <div className="p-4 border-b border-[#bdb3a5]/20">
+        <p className="text-[9px] font-light tracking-[0.25em] text-[#9f8370]/40 mb-2 uppercase">Chat History</p>
         <h2 className="text-base font-semibold text-[#4e3c30] mb-3 font-display">历史记录</h2>
         <button
           onClick={() => onNewChat?.()}
