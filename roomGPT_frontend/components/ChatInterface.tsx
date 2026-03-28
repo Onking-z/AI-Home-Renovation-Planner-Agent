@@ -675,7 +675,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
                           </div>
                         ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
 
@@ -839,28 +839,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
         )}
       </div>
 
-        {!showQuickScenes && messages.length === 0 && (
-          <div className="mb-1.5">
-            <QuickPrompts
-              onSelect={handleSelectQuickPrompt}
-            />
-            <span className="truncate text-xs font-medium text-accent">当前房间</span>
-            <button
-              onClick={() => {
-                if (currentRoomPreview) {
-                  URL.revokeObjectURL(currentRoomPreview);
-                }
-                setCurrentRoomImage(null);
-                setCurrentRoomPreview(null);
-              }}
-              className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-accent transition-all duration-200 hover:bg-surface-2 hover:text-accent"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        <div className="mb-3 space-y-2">
+      <div className="mb-3 space-y-2">
           {generalPendingImages.length > 0 && (
             <div>
               <div className="mb-1 text-[11px] font-medium text-[#4B6785]">已上传图片</div>
@@ -1018,6 +997,8 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
           )}
         </div>
 
+      {/* 底部输入区域 */}
+      <div className="px-4 pb-4">
         <div className="rounded-[24px] border border-[#8B6F47]/12 bg-white/90 px-3 py-2.5 shadow-[0_10px_26px_rgba(139,111,71,0.08)] backdrop-blur-md">
           <textarea
             value={input}
@@ -1136,63 +1117,6 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
             </button>
           </div>
         </div>
-      </div>
-
-      {/* 输入区域 */}
-      <div className="px-4 pb-4 flex items-end gap-2">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="输入您的问题或描述装修需求..."
-          className="w-full min-h-[52px] leading-5 bg-white/80 backdrop-blur-md text-text-primary rounded-2xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-[#bdb3a5]/20 focus:bg-white transition-all duration-300 placeholder:text-[#9f8370]/60 border border-[#bdb3a5]/20 shadow-sm active:scale-[0.99]"
-          rows={1}
-          disabled={isSending}
-        />
-        <input
-          type="file"
-          ref={currentRoomInputRef}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) updatePreview(file);
-          }}
-          accept="image/*"
-          className="hidden"
-          disabled={isSending}
-        />
-        <button
-          onClick={() => currentRoomInputRef.current?.click()}
-          disabled={isSending}
-          title="上传当前房间图片"
-          type="button"
-          className={`h-[56px] w-[56px] inline-flex items-center justify-center rounded-2xl transition-all duration-300 shadow-sm ${
-            isSending
-              ? "bg-white/60 text-text-secondary cursor-not-allowed"
-              : "bg-white text-accent hover:bg-[#fcf9f8] hover:shadow-md hover:-translate-y-0.5 active:scale-95"
-          }`}
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <rect x="3" y="5" width="18" height="14" rx="2" />
-            <circle cx="12" cy="12" r="1.5" />
-            <path d="M21 15l-4-6 2-4 6" />
-          </svg>
-        </button>
-        <button
-          onClick={() => void handleSendMessage()}
-          disabled={isSending || (!input.trim() && !currentRoomImage)}
-          title="发送"
-          type="button"
-          className={`h-[56px] w-[56px] inline-flex items-center justify-center rounded-2xl transition-all duration-300 shadow-sm ${
-            isSending || (!input.trim() && !currentRoomImage)
-              ? "bg-white/60 text-text-secondary cursor-not-allowed"
-              : "bg-[#8B6F47] text-white hover:bg-[#A68B5B] hover:shadow-md hover:-translate-y-0.5 active:scale-95"
-          }`}
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path d="M22 2L11 13" />
-            <path d="M22 2L15 22l-4-9-9-4" />
-          </svg>
-        </button>
       </div>
 
       {/* 图片灯箱 */}
