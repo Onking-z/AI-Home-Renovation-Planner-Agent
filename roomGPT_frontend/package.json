@@ -6,6 +6,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@fontsource-variable/outfit": "^5.0.0",
     "@headlessui/react": "^1.7.7",
     "@headlessui/tailwindcss": "^0.1.2",
     "@heroicons/react": "^2.0.16",
@@ -13,12 +14,14 @@
     "@vercel/analytics": "^0.1.11",
     "framer-motion": "^8.2.4",
     "next": "^13.4.4",
-    "@fontsource-variable/outfit": "^5.0.0",
     "react": "^18.2.0",
     "react-compare-slider": "^2.2.0",
     "react-countup": "^6.4.0",
     "react-dom": "^18.2.0",
-    "react-use-measure": "^2.1.1"
+    "react-markdown": "^10.1.0",
+    "react-use-measure": "^2.1.1",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "18.11.3",

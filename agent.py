@@ -1,145 +1,95 @@
-"""AI Home Renovation Planner - Coordinator/Dispatcher Pattern with Multimodal Vision
+"""AI Home Renovation Planner - Coordinator/Dispatcher Pattern mapped to LangGraph
 
-This demonstrates ADK's Coordinator/Dispatcher Pattern with Gemini 3 Flash's multimodal
-capabilities where a routing agent analyzes requests and delegates to specialists:
-
-- General questions → Quick info agent
-- Renovation planning → Full planning pipeline (Sequential Agent with 3 vision-enabled specialists)
-
-Pattern Reference: https://google.github.io/adk-docs/agents/multi-agents/#coordinator-dispatcher-pattern
+Pattern Reference: https://python.langchain.com/docs/langgraph/
 """
 
-from google.adk.agents import LlmAgent, SequentialAgent
-from google.adk.tools import google_search
-from google.adk.tools.agent_tool import AgentTool
+import operator
+from typing import TypedDict, Annotated, List, Dict, Any, Literal, Optional
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
+from pydantic import BaseModel, Field
+
+from llm_provider import get_chat_llm, get_vision_llm
+from langgraph.prebuilt import ToolNode
+
+# Tools will be imported from tools.py module
 from tools import (
-    generate_renovation_rendering,
-    edit_renovation_rendering,
-    list_renovation_renderings,
-    list_reference_images,
+    baidu_search_tool,
+    estimate_renovation_cost_tool,
+    calculate_timeline_tool,
+    generate_renovation_rendering_tool,
+    edit_renovation_rendering_tool,
+    list_renovation_renderings_tool,
 )
 
 
 # ============================================================================
-# Helper Tool Agent (wraps google_search)
+# State Definition
 # ============================================================================
 
-# google_search is a pre-built tool function that allows the agent to perform Google searches
-# Note: google_search can only be used by itself within an agent instance (single tool limitation)
+class RenovationState(TypedDict):
+    """The graph state shared by all nodes"""
+    messages: Annotated[List[BaseMessage], operator.add]
+    session_id: str
+    user_id: str
 
-search_agent = LlmAgent(
-    name="SearchAgent",
-    model="gemini-3-flash-preview",  # google_search requires Gemini 2.0+ models
-    description="Searches for renovation costs, contractors, materials, and design trends",
-    instruction="""You are a search specialist. When asked to find information about renovation costs, 
-contractors, materials, or design trends, the search capability is automatically enabled. 
-Simply respond with the information you find. Be concise and cite sources when available.""",
-    tools=[google_search],
-)
+    # Router output — written by router_node, read by conditional edge
+    route_decision: str
+
+    # Context captured from earlier steps
+    room_analysis: str
+    style_preferences: str
+    room_type: str
+    key_issues: str
+    opportunities: str
+    budget_constraint: str
 
 
-# ============================================================================
-# Utility Tools
-# ============================================================================
-
-def estimate_renovation_cost(
-    room_type: str,
-    scope: str,
-    square_footage: int,
-) -> str:
-    """Estimate renovation costs based on room type and scope.
-    
-    Args:
-        room_type: Type of room (kitchen, bathroom, bedroom, living_room, etc.)
-        scope: Renovation scope (cosmetic, moderate, full, luxury)
-        square_footage: Room size in square feet
-    
-    Returns:
-        Estimated cost range for Chinese users in RMB
-    """
-    # Cost per sq ft estimates (used only as a rough internal baseline before converting to RMB)
-    rates = {
-        "kitchen": {"cosmetic": (50, 100), "moderate": (150, 250), "full": (300, 500), "luxury": (600, 1200)},
-        "bathroom": {"cosmetic": (75, 125), "moderate": (200, 350), "full": (400, 600), "luxury": (800, 1500)},
-        "bedroom": {"cosmetic": (30, 60), "moderate": (75, 150), "full": (150, 300), "luxury": (400, 800)},
-        "living_room": {"cosmetic": (40, 80), "moderate": (100, 200), "full": (200, 400), "luxury": (500, 1000)},
-    }
-    
-    room = room_type.lower().replace(" ", "_")
-    scope_level = scope.lower()
-    
-    if room not in rates:
-        room = "living_room"
-    if scope_level not in rates[room]:
-        scope_level = "moderate"
-    
-    low, high = rates[room][scope_level]
-    
-    total_low_usd = low * square_footage
-    total_high_usd = high * square_footage
-
-    usd_to_cny = 7.2
-    total_low_cny = int(total_low_usd * usd_to_cny)
-    total_high_cny = int(total_high_usd * usd_to_cny)
-    square_meters = max(1, round(square_footage * 0.0929, 1))
-
-    scope_labels = {
-        "cosmetic": "软装优化/轻改造",
-        "moderate": "中度翻新",
-        "full": "整体翻新",
-        "luxury": "高配精装",
-    }
-    room_labels = {
-        "kitchen": "厨房",
-        "bathroom": "卫生间",
-        "bedroom": "卧室",
-        "living_room": "客厅",
-    }
-
-    return (
-        f"预算参考：约人民币 {total_low_cny:,} - {total_high_cny:,} 元"
-        f"（{room_labels.get(room, room_type)}，{scope_labels.get(scope_level, scope_level)}，"
-        f"约 {square_meters} 平方米 / {square_footage} 平方英尺）。"
-        " 请优先按中国本地市场的材料、人工和城市差异理解这一区间。"
+class RouteDecision(BaseModel):
+    next_node: Literal["info", "planning", "editing"] = Field(
+        ...,
+        description="The target node to route to. 'info' for general chatting, 'planning' for new renovation analysis/photos, 'editing' to edit existing renderings."
     )
 
 
-def calculate_timeline(
-    scope: str,
-    room_type: str,
-) -> str:
-    """Estimate renovation timeline based on scope and room type.
-    
-    Args:
-        scope: Renovation scope (cosmetic, moderate, full, luxury)
-        room_type: Type of room being renovated
-    
-    Returns:
-        Estimated timeline with phases
+# ============================================================================
+# Node Functions
+# ============================================================================
+
+def router_node(state: RenovationState):
     """
-    timelines = {
-        "cosmetic": "1-2 周（软装优化或轻改造）",
-        "moderate": "3-6 周（含部分定制与施工）",
-        "full": "2-4 个月（整体翻新）",
-        "luxury": "4-6 个月（高配定制与精细施工）"
-    }
-    
-    scope_level = scope.lower()
-    timeline = timelines.get(scope_level, timelines["moderate"])
-    
-    return f"施工周期参考：{timeline}"
+    Coordinator/Dispatcher (Root Agent)
+    Routes user query to appropriate agent using an LLM classifier.
+    Writes route_decision into state for the downstream conditional edge to read.
+    """
+    llm = get_chat_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(RouteDecision)
+
+    system_prompt = """You are the Coordinator for the AI Home Renovation Planner.
+
+ROUTING LOGIC:
+1. **For general questions/greetings** -> returning 'info'
+2. **For editing EXISTING renderings** (e.g., "make cabinets cream") -> returning 'editing'
+3. **For NEW renovation planning** (e.g., "Plan my kitchen", "Here's my space") -> returning 'planning'
+   ALWAYS route here if images were uploaded in the latest message.
+"""
+    # Look at the most recent context to decide routing.
+    messages = [SystemMessage(content=system_prompt)] + state["messages"][-3:]
+    try:
+        decision = structured_llm.invoke(messages)
+        route = decision.next_node
+    except Exception:
+        route = "info"  # fallback
+
+    return {"route_decision": route}
 
 
-# ============================================================================
-# Specialist Agent 1: Info Agent (for general inquiries)
-# ============================================================================
+def info_node(state: RenovationState):
+    """Handles general renovation questions and provides system information"""
+    llm = get_chat_llm(temperature=0.7)
 
-info_agent = LlmAgent(
-    name="InfoAgent",
-    model="gemini-3-flash-preview",
-    description="Handles general renovation questions and provides system information",
-    instruction="""
-You are the Info Agent for the AI Home Renovation Planner.
+    system_prompt = """You are the Info Agent for the AI Home Renovation Planner.
 
 WHEN TO USE: The coordinator routes general questions and casual greetings to you.
 
@@ -155,389 +105,244 @@ EXAMPLE:
 "你好，我可以帮你分析当前房间照片和灵感图，整理出更适合落地的装修方案，包括设计建议、预算参考和周期安排。你现在想改的是哪个空间？如果方便的话，也可以直接发我房间图片。"
 
 Be enthusiastic about home improvement and helpful!
-""",
-)
+"""
+    messages = [SystemMessage(content=system_prompt)] + state["messages"]
+    response = llm.invoke(messages)
+    return {"messages": [response]}
 
 
-# ============================================================================
-# Specialist Agent 2: Rendering Editor (for iterative refinements)
-# ============================================================================
+def visual_assessor_node(state: RenovationState):
+    """Analyzes room photos and inspiration images using visual AI"""
+    # Use vision LLM because images might be present
+    llm = get_vision_llm(temperature=0.2)
+    tools = [baidu_search_tool, estimate_renovation_cost_tool]
+    llm_with_tools = llm.bind_tools(tools)
 
-rendering_editor = LlmAgent(
-    name="RenderingEditor",
-    model="gemini-3-flash-preview",
-    description="Edits existing renovation renderings based on user feedback",
-    instruction="""
-You refine existing renovation renderings.
-
-**TASK**: User wants to modify an existing rendering (e.g., "make cabinets cream", "darker flooring").
-
-**CRITICAL**: Prefer the latest rendering already stored in session state.
-Only search conversation history for a filename if you truly need it.
-
-Use **edit_renovation_rendering** tool:
-
-Parameters:
-1. artifact_filename: Optional. Omit it to use the most recent rendering already stored in session state.
-2. prompt: Very specific edit instruction (be detailed!)
-3. asset_name: Base name without _vX (e.g., "kitchen_modern_renovation")
-
-**Example:**
-User: "Make the cabinets cream instead of white"
-Last rendering: "kitchen_modern_renovation_v1.png"
-
-Call: edit_renovation_rendering(
-  prompt="将厨房柜门从白色改成柔和的奶油色，保留其他元素完全不变，包括地面、台面、墙砖、灯光、电器和整体布局。",
-  asset_name="kitchen_modern_renovation"
-)
-
-Be SPECIFIC in prompts - vague = poor results!
-
-After editing, briefly confirm the change.
-
-**IMPORTANT - DO NOT use markdown image syntax!**
-- Do NOT output `![image](filename.png)` or similar markdown image links
-- Simply confirm the edit was successful and mention the artifact is available in the artifacts panel
-""",
-    tools=[edit_renovation_rendering, list_renovation_renderings],
-)
-
-
-# ============================================================================
-# Specialist Agents 3-5: Full Planning Pipeline (SequentialAgent)
-# ============================================================================
-
-visual_assessor = LlmAgent(
-    name="VisualAssessor",
-    model="gemini-3-flash-preview",
-    description="Analyzes room photos and inspiration images using visual AI",
-    instruction="""
-You are a visual AI specialist. Analyze ANY uploaded images and detect their type automatically.
-
-**IMPORTANT NOTE**: You can SEE and ANALYZE uploaded images, but currently the image editing feature
-has limitations in ADK Web. Focus on providing detailed analysis and design recommendations.
+    system_prompt = """You are a visual AI specialist. Analyze ANY uploaded images and detect their type automatically.
 
 OUTPUT RULES FOR CHINESE USERS:
 - Respond in Simplified Chinese unless the user explicitly asks for another language
 - Prioritize Chinese home renovation context: use square meters first, RMB first, and Chinese-friendly material/furniture descriptions
-- Avoid long English headings mixed into Chinese paragraphs unless it is truly necessary
-- If referencing a brand or product, prefer neutral material descriptions or examples available to Chinese users; do not default to overseas-only brands
-- Keep structure clear and concise; avoid repeating the same plan multiple times
+- Avoid long English headings mixed into Chinese paragraphs
+- Keep structure clear and concise
 
 AUTOMATICALLY DETECT:
 1. If image shows a CURRENT ROOM (existing space that needs renovation)
 2. If image shows INSPIRATION/STYLE reference (desired aesthetic)
 3. Extract budget constraints from user's message if mentioned
 
-## For CURRENT ROOM images:
-**Current Space Analysis:**
-- Room type: [kitchen/bathroom/bedroom/etc.]
-- Size estimate: [dimensions if visible]
-- Current condition: [issues, outdated elements, damage]
-- Existing style: [current aesthetic]
-- Key problems: [what needs fixing]
-- Improvement opportunities: [quick wins, major changes]
-
 **CRITICAL - DOCUMENT EXACT LAYOUT (for preservation in rendering):**
-- Window positions: [e.g., "large window on left wall above sink", "skylight in center"]
-- Door positions: [e.g., "doorway on right side"]
-- Cabinet layout: [e.g., "L-shaped upper and lower cabinets along back and left walls"]
-- Appliance positions: [e.g., "stove centered on back wall", "refrigerator on right"]
-- Sink location: [e.g., "under window on left wall"]
-- Counter layout: [e.g., "continuous counter along back and left walls"]
-- Special features: [e.g., "skylight", "breakfast bar", "island"]
-- Camera angle in photo: [e.g., "shot from doorway looking into kitchen"]
-
-## For INSPIRATION images:
-**Inspiration Style:**
-- Style name: [modern farmhouse/minimalist/industrial/etc.]
-- Color palette: [specific colors]
-- Key materials: [wood/stone/metal types]
-- Notable features: [lighting/storage/layout elements]
-- Design elements: [hardware/finishes/patterns]
-
-## Analysis Output:
-
-If BOTH current room + inspiration provided:
-- Compare current vs. inspiration
-- Identify specific changes needed to achieve the inspiration look
-- Note what can stay vs. what needs replacement
-
-If ONLY current room provided:
-- Suggest 2-3 style directions that would work well
-- Focus on functional improvements + aesthetic upgrades
-
-If budget mentioned:
-- Use estimate_renovation_cost tool with detected room type and appropriate scope
-- Assess what's achievable within budget
+- Window positions, Door positions, Cabinet layout, Appliance positions, Sink location, Counter layout, Camera angle
 
 **IMPORTANT: At the end of your analysis, output a structured summary in Chinese:**
-
 ```
 分析完成
 
-Images Provided:
-- Current room photo: [Yes/No - describe what you see if yes]
-- Inspiration photo: [Yes/No - describe style if yes]
-
-Room Details:
-- Type: [kitchen/bathroom/bedroom/etc.]
-- Current Analysis: [detailed analysis from photo if provided, or from description]
-- Desired Style: [from inspiration photo or user description]
-- Key Issues: [problems to address]
-- Improvement Opportunities: [suggested improvements]
-- Budget Constraint: [预算金额；优先使用人民币，未提及时写“未说明”]
+Images Provided: [details]
+Room Details: [Type, Analysis, Style, Key Issues, Opportunities, Budget]
 
 **EXACT LAYOUT TO PRESERVE (critical for rendering):**
-- Windows: [exact positions and sizes]
-- Doors: [exact positions]
-- Cabinets: [configuration and placement - upper/lower, which walls]
-- Appliances: [stove, fridge, dishwasher positions]
-- Sink: [location]
-- Counter layout: [shape and coverage]
-- Special features: [skylights, islands, breakfast bars, etc.]
-- Camera angle: [perspective of the original photo]
+[List windows, doors, cabinets, appliances, sink exactly]
 ```
+"""
+    messages = [SystemMessage(content=system_prompt)] + state["messages"]
+    response = llm_with_tools.invoke(messages)
+    return {"messages": [response]}
 
-Be EXTREMELY DETAILED about the layout - the rendering must match this layout EXACTLY while only changing surface finishes.
-""",
-    tools=[AgentTool(search_agent), estimate_renovation_cost],
-)
 
+def design_planner_node(state: RenovationState):
+    """Creates detailed renovation design plan"""
+    llm = get_chat_llm(temperature=0.4)
+    tools = [calculate_timeline_tool]
+    llm_with_tools = llm.bind_tools(tools)
 
-design_planner = LlmAgent(
-    name="DesignPlanner",
-    model="gemini-3-flash-preview",
-    description="Creates detailed renovation design plan",
-    instruction="""
-Read from state: room_analysis, style_preferences, room_type, key_issues, opportunities, budget_constraint
-
-Create SPECIFIC, ACTIONABLE design plan tailored to their situation.
+    system_prompt = """Create SPECIFIC, ACTIONABLE design plan tailored to their situation based on conversation history.
 
 OUTPUT RULES FOR CHINESE USERS:
 - Respond in Simplified Chinese unless the user explicitly asks for another language
 - Default to RMB, square meters, and Chinese renovation vocabulary
-- Recommendations should fit Chinese users' purchasing habits: describe materials, colors, and styles first; if giving examples, prefer generic categories or brands commonly accessible in China
-- Do not default to North American-only brands, store names, or pricing language
-- Avoid duplicating the same plan in multiple formats unless it adds clear value
+- Avoid duplicating the same plan in multiple formats
 
 **CRITICAL RULE - PRESERVE EXACT LAYOUT:**
-The design plan must KEEP THE EXACT SAME LAYOUT as the current room. DO NOT suggest:
-- Moving appliances to different locations
-- Reconfiguring cabinet positions
-- Adding or removing windows/doors
-- Changing the room's footprint or structure
-- Adding islands or removing existing features
-
-ONLY specify changes to SURFACE FINISHES applied to the existing layout:
-- Paint colors for existing walls and cabinets
-- New countertop material on existing counters
-- New flooring in the same floor area
-- New backsplash on existing walls
-- New hardware on existing cabinets
-- Lighting upgrades (can add under-cabinet lights, replace fixtures in same positions)
-
-## Design Plan
-
-**Budget-Conscious Approach:**
-- If budget_constraint exists: Prioritize changes that give max impact for the money
-- Separate "must-haves" vs "nice-to-haves"
-
-**Design Specifications (surface finish changes ONLY - no layout changes):**
-- **Layout**: PRESERVE EXACTLY AS-IS (reference Visual Assessor's layout documentation)
-- **Cabinet Color**: [exact paint color with code - applied to EXISTING cabinets]
-- **Wall Color**: [exact paint color with code]
-- **Countertops**: [material and color - applied to EXISTING counter layout]
-- **Flooring**: [type, color - same floor area]
-- **Backsplash**: [material, pattern - same wall areas]
-- **Hardware**: [handles, pulls - replace on existing cabinets]
-- **Lighting**: [fixture upgrades in same positions, add under-cabinet if applicable]
-- **Appliances**: [keep existing OR replace with similar size in SAME locations]
-- **Key Features**: [decorative elements only]
-
-**Style Consistency:**
-If inspiration photo provided: Match that aesthetic precisely using ONLY surface finish changes
-If no inspiration: Use style_preferences from state
-
-Use calculate_timeline tool with room_type and renovation_scope.
+The design plan must KEEP THE EXACT SAME LAYOUT as the current room. DO NOT suggest moving structure/features.
+ONLY specify changes to SURFACE FINISHES.
 
 **IMPORTANT: At the end, provide a structured summary in Chinese:**
-
 ```
 设计完成
 
-Renovation Scope: [cosmetic/moderate - NO structural changes]
-Layout: PRESERVED EXACTLY (no changes to cabinet positions, appliance locations, or room structure)
+Renovation Scope: [scope]
+Layout: PRESERVED EXACTLY
 
 Surface Finish Changes:
-- Cabinets: [color change only]
-- Walls: [paint color]
-- Countertops: [material/color]
-- Flooring: [type/color]
-- Backsplash: [material/pattern]
-- Hardware: [style/finish]
-- Lighting: [upgrades]
+[Cabinets, Walls, Countertops, etc.]
 
-材料清单摘要:
-[详细列出材料、颜色、规格；优先使用中国用户易理解的叫法]
+材料清单摘要: [Details]
 ```
+"""
+    messages = [SystemMessage(content=system_prompt)] + state["messages"]
+    response = llm_with_tools.invoke(messages)
+    return {"messages": [response]}
 
-Be SPECIFIC with product names, colors, dimensions. The rendering must show the EXACT same layout with only the surface finishes changed.
-""",
-    tools=[calculate_timeline],
-)
 
+def rendering_editor_node(state: RenovationState):
+    """Edits existing renovation renderings based on user feedback"""
+    llm = get_chat_llm(temperature=0.6)
+    tools = [edit_renovation_rendering_tool, list_renovation_renderings_tool]
+    llm_with_tools = llm.bind_tools(tools)
 
-project_coordinator = LlmAgent(
-    name="ProjectCoordinator",
-    model="gemini-3-flash-preview",
-    description="Generates the final photorealistic rendering based on the approved design plan",
-    instruction="""
-Read conversation history and session context to extract:
-- The current room layout from Visual Assessor
-- The approved design direction from Design Planner
-- Any constraints or refinements mentioned by the user
+    system_prompt = """You refine existing renovation renderings.
+**TASK**: User wants to modify an existing rendering (e.g., "make cabinets cream").
 
-YOUR PRIMARY JOB:
-- Focus on generating the visual rendering as quickly as possible
-- Do NOT repeat the full renovation plan, long budget sections, or long execution checklists
-- Use the existing room layout and latest design plan from the conversation
-
-OUTPUT RULES FOR CHINESE USERS:
-- Respond in Simplified Chinese unless the user explicitly asks for another language
-- Keep the final response concise
-- If rendering succeeds, use only 2-3 sentences to summarize what the image shows
-- If rendering fails, clearly state that the text plan is already complete but the rendering service is busy, and suggest retrying later
-
-## 生成效果图
-
-Use **generate_renovation_rendering** tool to CREATE a photorealistic rendering:
-
-Build an ULTRA-DETAILED prompt using the **SLC Formula** (Subject, Lighting, Camera):
-
-**From Visual Assessor & Design Planner, extract:**
-- Room type, current layout details, desired style
-- Exact colors with codes/names, specific materials, finishes
-- Layout preservation requirements, lighting fixtures, all key features
-
-**Prompt Structure using SLC Formula:**
-
-"[CAMERA SPECS FIRST] Shot on professional DSLR, 8K resolution, HDR, ultra high definition, architectural photography, wide-angle lens from [specific angle matching original photo], sharp focus throughout, professional interior design photography quality.
-
-[SUBJECT - ULTRA DETAILED] A renovated [room_type] featuring [exact style, e.g., 'modern farmhouse' or 'contemporary minimalist']. 
-
-**CRITICAL - PRESERVE EXACT LAYOUT**: Maintain the EXACT same layout as original:
-- [List specific window positions, e.g., 'large window on left wall above sink']
-- [Door locations, e.g., 'doorway on right side']
-- [Cabinet configuration, e.g., 'L-shaped upper and lower cabinets along back and left walls']
-- [Appliance positions, e.g., 'stove centered on back wall, refrigerator on right']
-- [Sink location, counter layout, special features like skylights]
-- Same room dimensions and camera angle as original
-
-**Surface Finish Details (ONLY changes - be VERY specific with textures):**
-- Cabinets: [e.g., '哑光暖白色柜门，细窄边框造型，表面平整细腻']
-- Countertops: [e.g., 'honed Carrara marble with delicate grey veining and soft matte finish']
-- Flooring: [e.g., 'wide-plank white oak with natural grain variation and satin finish']
-- Backsplash: [e.g., 'classic white subway tile in herringbone pattern with light grey grout']
-- Hardware: [e.g., 'brushed nickel cabinet pulls and handles with modern cylindrical design']
-- Walls: [specific paint color]
-- Lighting: [e.g., 'modern pendant lights with clear glass shades, warm LED under-cabinet lighting']
-- Appliances: [e.g., 'stainless steel appliances in SAME positions']
-- Decorative elements: [e.g., 'fresh flowers in white vase, wooden cutting board']
-
-[LIGHTING - CREATE ATMOSPHERE] Soft morning sunlight streaming through windows creating gentle shadows, warm LED under-cabinet lighting adding ambient glow, natural diffused light highlighting the [material] countertops, subtle shadows adding depth and dimension, highlights on polished surfaces, clean and inviting atmosphere with even illumination.
-
-Style: Photorealistic, magazine quality, architectural digest aesthetic, modern luxury feel."
-
-**Key Requirements:**
-- Start with camera/technical specs (8K, HDR, professional DSLR)
-- Use rich, descriptive adjectives for materials (smooth, honed, brushed, wide-plank, etc.)
-- Specify exact lighting conditions (soft morning light, warm LED, diffused natural light)
-- Include texture details (grain, veining, panel details, finish type)
-- Mention atmosphere (clean, inviting, modern luxury)
-- Emphasize layout preservation
-- Use professional photography terms
-
-Parameters:
-- prompt: [your ultra-detailed SLC-formatted prompt above]
-- aspect_ratio: "16:9"
-- asset_name: "[room_type]_[style_keyword]_renovation" (e.g., "kitchen_modern_farmhouse_renovation")
-
-**After generating:**
-Briefly describe in Chinese (2-3 sentences) the key features visible in the rendering and how it addresses their needs.
+Use **edit_renovation_rendering** tool:
+Parameters: artifact_filename, prompt (detailed edit instruction), asset_name
 
 **IMPORTANT - DO NOT use markdown image syntax!**
-- Do NOT output `![image](filename.png)` or similar markdown image links
-- Do NOT try to display the image inline with markdown
-- Simply mention that the rendering has been generated and saved as an artifact
-- The user can view the artifact through the artifacts panel
-
-**文案要求补充：**
-- Prefer Chinese-only wording
-- Explain paint colors and materials in Chinese first
-- Do not restate the full budget and execution plan unless the user explicitly asks
-""",
-    tools=[generate_renovation_rendering, edit_renovation_rendering, list_renovation_renderings],
-)
-
-
-# Create the planning pipeline (runs only when coordinator routes planning requests here)
-planning_pipeline = SequentialAgent(
-    name="PlanningPipeline",
-    description="Fast renovation planning pipeline: Visual Assessment → Design Planning",
-    sub_agents=[
-        visual_assessor,
-        design_planner,
-    ],
-)
+Simply confirm the edit was successful and mention the artifact is available.
+"""
+    messages = [SystemMessage(content=system_prompt)] + state["messages"]
+    response = llm_with_tools.invoke(messages)
+    return {"messages": [response]}
 
 
 # ============================================================================
-# Coordinator/Dispatcher (Root Agent)
+# Tool Execution Nodes
 # ============================================================================
 
-root_agent = LlmAgent(
-    name="HomeRenovationPlanner",
-    model="gemini-3-flash-preview",
-    description="Intelligent coordinator that routes renovation requests to the appropriate specialist or planning pipeline. Supports image analysis!",
-    instruction="""
-You are the Coordinator for the AI Home Renovation Planner.
-
-YOUR ROLE: Analyze the user's request and route it to the right specialist using transfer_to_agent.
-
-ROUTING LOGIC:
-
-1. **For general questions/greetings**:
-   → transfer_to_agent to "InfoAgent"
-   → Examples: "hi", "what do you do?", "how much do renovations cost?"
-
-2. **For editing EXISTING renderings** (only if rendering was already generated):
-   → transfer_to_agent to "RenderingEditor"
-   → Examples: "make cabinets cream", "darker", "change color", "add lights"
-   → User wants to MODIFY an existing rendering
-   → Check: Was a rendering generated earlier?
-
-3. **For NEW renovation planning**:
-   → transfer_to_agent to "PlanningPipeline"
-   → Examples: "Plan my kitchen", "Here's my space [photos]", "Help renovate"
-   → First-time planning or new project
-   → ALWAYS route here if images uploaded!
-
-CRITICAL: You MUST use transfer_to_agent - don't answer directly!
-
-Decision flow:
-- Rendering exists + wants changes → RenderingEditor
-- New project/images → PlanningPipeline
-- Just chatting → InfoAgent
-
-Be a smart router - match intent!
-""",
-    sub_agents=[
-        info_agent,
-        rendering_editor,
-        planning_pipeline,
-    ],
-)
+visual_assessor_tool_node = ToolNode([baidu_search_tool, estimate_renovation_cost_tool])
+design_planner_tool_node = ToolNode([calculate_timeline_tool])
+rendering_editor_tool_node = ToolNode([edit_renovation_rendering_tool, list_renovation_renderings_tool])
 
 
-__all__ = ["root_agent", "project_coordinator"]
+# ============================================================================
+# Edge Logic
+# ============================================================================
+
+def route_after_router(state: RenovationState) -> str:
+    """Conditional edge: reads route_decision from state (written by router_node)."""
+    return state.get("route_decision", "info")
+
+
+def should_continue_visual(state: RenovationState) -> str:
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "visual_assessor_tools"
+    return "design_planner"
+
+
+def should_continue_planner(state: RenovationState) -> str:
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "design_planner_tools"
+    return END
+
+
+def should_continue_editor(state: RenovationState) -> str:
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "rendering_editor_tools"
+    return END
+
+
+# ============================================================================
+# Graph Compilation (Main Chatbot Graph)
+# ============================================================================
+
+checkpointer = MemorySaver()
+
+builder = StateGraph(RenovationState)
+
+# Nodes
+builder.add_node("router", router_node)
+builder.add_node("info", info_node)
+builder.add_node("visual_assessor", visual_assessor_node)
+builder.add_node("visual_assessor_tools", visual_assessor_tool_node)
+builder.add_node("design_planner", design_planner_node)
+builder.add_node("design_planner_tools", design_planner_tool_node)
+builder.add_node("rendering_editor", rendering_editor_node)
+builder.add_node("rendering_editor_tools", rendering_editor_tool_node)
+
+# Edges: START -> router -> conditional
+builder.add_edge(START, "router")
+builder.add_conditional_edges("router", route_after_router, {
+    "info": "info",
+    "planning": "visual_assessor",
+    "editing": "rendering_editor",
+})
+
+# Info agent stops after replying
+builder.add_edge("info", END)
+
+# Visual Assessor -> tools loop -> Design Planner
+builder.add_conditional_edges("visual_assessor", should_continue_visual, {
+    "visual_assessor_tools": "visual_assessor_tools",
+    "design_planner": "design_planner",
+})
+builder.add_edge("visual_assessor_tools", "visual_assessor")
+
+# Design Planner -> tools loop -> END
+builder.add_conditional_edges("design_planner", should_continue_planner, {
+    "design_planner_tools": "design_planner_tools",
+    END: END,
+})
+builder.add_edge("design_planner_tools", "design_planner")
+
+# Rendering Editor -> tools loop -> END
+builder.add_conditional_edges("rendering_editor", should_continue_editor, {
+    "rendering_editor_tools": "rendering_editor_tools",
+    END: END,
+})
+builder.add_edge("rendering_editor_tools", "rendering_editor")
+
+# Compile with checkpointer for cross-request memory
+graph = builder.compile(checkpointer=checkpointer)
+
+
+# ============================================================================
+# Render Sub-Graph (Background image generation)
+# ============================================================================
+
+class RenderGraphState(TypedDict):
+    messages: Annotated[List[BaseMessage], operator.add]
+    session_id: str
+    user_id: str
+
+
+def project_coordinator_node(state: RenderGraphState):
+    llm = get_chat_llm(temperature=0.6)
+    tools = [generate_renovation_rendering_tool, edit_renovation_rendering_tool, list_renovation_renderings_tool]
+    llm_with_tools = llm.bind_tools(tools)
+
+    system_prompt = """YOUR PRIMARY JOB:
+Focus on generating the visual rendering as quickly as possible.
+Do NOT repeat the full renovation plan, long budget sections, or long execution checklists.
+
+If rendering succeeds, use only 2-3 sentences to summarize what the image shows.
+Use generate_renovation_rendering tool and build an ULTRA-DETAILED prompt using the SLC Formula.
+"""
+    messages = [SystemMessage(content=system_prompt)] + state["messages"]
+    response = llm_with_tools.invoke(messages)
+    return {"messages": [response]}
+
+
+render_tool_node = ToolNode([generate_renovation_rendering_tool, edit_renovation_rendering_tool, list_renovation_renderings_tool])
+
+
+def should_continue_render(state: RenderGraphState) -> str:
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "tools"
+    return END
+
+
+render_builder = StateGraph(RenderGraphState)
+render_builder.add_node("coordinator", project_coordinator_node)
+render_builder.add_node("tools", render_tool_node)
+
+render_builder.add_edge(START, "coordinator")
+render_builder.add_conditional_edges("coordinator", should_continue_render)
+render_builder.add_edge("tools", "coordinator")
+
+render_graph = render_builder.compile()
+
+__all__ = ["graph", "render_graph"]

@@ -10,14 +10,17 @@ from urllib.parse import quote, urlencode
 from urllib.request import urlopen
 from typing import Any, AsyncGenerator, Callable, Optional
 
+from baidu_search import baidu_web_search
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from agent import project_coordinator, root_agent
-from google.adk.agents.run_config import RunConfig, StreamingMode
+from agent import graph, render_graph
+from llm_provider import encode_image_to_base64_message
+from langchain_core.messages import HumanMessage
 from db import (
     create_render_job,
     delete_session,
@@ -46,8 +49,7 @@ IMAGE_GENERATION_MODE = os.getenv("IMAGE_GENERATION_MODE", "local_mock").strip()
 FRONTEND_PUBLIC_ROOT = Path(os.getenv("FRONTEND_PUBLIC_ROOT", Path(os.getcwd()) / "roomGPT_frontend" / "public"))
 LOCAL_ORIGINAL_DIR = Path(os.getenv("LOCAL_ORIGINAL_DIR", FRONTEND_PUBLIC_ROOT / "local-images" / "original"))
 LOCAL_RENDERED_DIR = Path(os.getenv("LOCAL_RENDERED_DIR", FRONTEND_PUBLIC_ROOT / "local-images" / "rendered"))
-GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY", "").strip()
-GOOGLE_CSE_CX = os.getenv("GOOGLE_CSE_CX", "").strip()
+# (Google CSE removed — 搜索功能已迁移到百度千帆 AI 搜索，见 baidu_search.py)
 QUICK_GENERATE_USER = "quick_generate_user"
 UPSTREAM_503_MAX_RETRIES = max(0, int(os.getenv("UPSTREAM_503_MAX_RETRIES", "2")))
 UPSTREAM_503_BACKOFF_SECONDS = max(0.2, float(os.getenv("UPSTREAM_503_BACKOFF_SECONDS", "1.0")))
@@ -68,17 +70,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-runner = None
-render_runner = None
-artifact_service = None
-TRACKED_AGENTS = {
-    "HomeRenovationPlanner",
-    "InfoAgent",
-    "VisualAssessor",
-    "DesignPlanner",
-    "ProjectCoordinator",
-    "RenderingEditor",
-}
+# (ADK runner/artifact_service removed - now using LangGraph graph objects from agent.py)
 
 USD_TO_CNY = 7.2
 HEADING_REPLACEMENTS = {
@@ -110,6 +102,10 @@ TERM_REPLACEMENTS = {
     "Must-haves": "优先投入",
     "Nice-to-haves": "可选升级",
     "Layout": "布局",
+    "Renovation Scope": "改造范围",
+    "Surface Finish Changes": "表面改造项",
+    "Moderate (surface finishes & soft furnishings only)": "中度改造（仅表面翻新与软装优化）",
+    "PRESERVED EXACTLY": "完全保留",
     "Budget-Conscious Approach": "预算策略",
     "Design Specifications": "设计规格",
 }
@@ -181,28 +177,15 @@ class PromptRecommendationsResponse(BaseModel):
 
 
 def require_api_key() -> None:
-    if "GOOGLE_API_KEY" not in os.environ and "GEMINI_API_KEY" not in os.environ:
+    if "LLM_API_KEY" not in os.environ:
         raise HTTPException(
             status_code=500,
-            detail="Missing GOOGLE_API_KEY or GEMINI_API_KEY. Please configure it in the local .env file.",
+            detail="Missing LLM_API_KEY. Please configure it in the local .env file.",
         )
 
 
 async def ensure_adk_session(user_id: str, session_id: str):
-    session = await runner.session_service.get_session(
-        app_name=APP_NAME,
-        user_id=user_id,
-        session_id=session_id,
-    )
-    if session is None:
-        session = await runner.session_service.create_session(
-            app_name=APP_NAME,
-            user_id=user_id,
-            session_id=session_id,
-        )
-    state_snapshot = session_state_snapshot(session_id=session_id, user_id=user_id)
-    session.state.update(state_snapshot)
-    return session
+    return True
 
 
 def build_asset_url(request: Request, session_id: str, filename: str, user_id: str) -> str:
@@ -222,25 +205,19 @@ async def save_uploaded_asset(
     user_id: str,
     session_id: str,
 ) -> tuple[str, int, Any]:
-    from google.genai import types
-
     image_data = await file.read()
     if not image_data:
         raise HTTPException(status_code=400, detail=f"Uploaded {asset_type} image is empty.")
 
     extension = os.path.splitext(file.filename or "")[1] or ".png"
     artifact_filename = f"{asset_type}_{uuid.uuid4().hex[:8]}{extension}"
-    image_part = types.Part.from_bytes(data=image_data, mime_type=file.content_type or "image/png")
-
-    version = await artifact_service.save_artifact(
-        app_name=APP_NAME,
-        user_id=user_id,
-        session_id=session_id,
-        filename=artifact_filename,
-        artifact=image_part,
-        custom_metadata={"asset_type": asset_type},
-    )
-
+    
+    filepath = os.path.join(ARTIFACT_ROOT, artifact_filename)
+    with open(filepath, "wb") as f:
+        f.write(image_data)
+        
+    version = 1
+    # Simple version handling
     save_asset(
         session_id=session_id,
         user_id=user_id,
@@ -249,7 +226,8 @@ async def save_uploaded_asset(
         version=version,
         metadata={"original_filename": file.filename},
     )
-    return artifact_filename, version, image_part
+    b64_msg = encode_image_to_base64_message(image_data, file.content_type or "image/png")
+    return artifact_filename, version, b64_msg
 
 
 async def prepare_message_content(
@@ -262,9 +240,9 @@ async def prepare_message_content(
     current_room_image: UploadFile | None = None,
     image: UploadFile | None = None,
 ):
-    from google.genai import types
+    
 
-    parts = [types.Part.from_text(text=message)]
+    parts = [{"type": "text", "text": message}]
     uploaded_assets: list[dict[str, str]] = []
     session = await ensure_adk_session(user_id=user_id, session_id=session_id)
 
@@ -286,73 +264,21 @@ async def prepare_message_content(
             session_id=session_id,
         )
         uploaded_assets.append({"filename": artifact_filename, "asset_type": asset_type})
-        if asset_type == "current_room":
-            session.state["latest_current_room_image"] = artifact_filename
-        elif asset_type == "inspiration":
-            session.state["latest_inspiration_image"] = artifact_filename
-            session.state["latest_reference_image"] = artifact_filename
-        session.state.setdefault("reference_images", {})[artifact_filename] = {
-            "type": asset_type,
-            "version": version,
-        }
+
         parts.append(image_part)
 
-    return types.Content(role="user", parts=parts), uploaded_assets
+    return HumanMessage(content=parts), uploaded_assets
 
 
-async def extract_reply_text(events: AsyncGenerator) -> str:
-    reply_texts: list[str] = []
-    async for event in events:
-        if event.content and event.content.parts:
-            for part in event.content.parts:
-                if part.text:
-                    reply_texts.append(part.text)
-    return normalize_assistant_output("".join(reply_texts))
 
+# (ADK extract_reply_text / retry helpers removed - LangGraph uses graph.ainvoke / astream_events)
 
-def is_retryable_upstream_error(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return "503" in text or "unavailable" in text or "high demand" in text
-
-
-async def backoff_sleep(attempt_index: int) -> None:
-    # Exponential backoff: 1s -> 2s -> 4s (configurable base)
-    delay = UPSTREAM_503_BACKOFF_SECONDS * (2 ** attempt_index)
-    await asyncio.sleep(delay)
-
-
-async def extract_reply_text_with_retry(
-    make_events: Callable[[], AsyncGenerator],
-    *,
-    trace_name: str,
-) -> str:
-    for attempt in range(UPSTREAM_503_MAX_RETRIES + 1):
-        try:
-            return await extract_reply_text(make_events())
-        except Exception as exc:
-            can_retry = is_retryable_upstream_error(exc) and attempt < UPSTREAM_503_MAX_RETRIES
-            if not can_retry:
-                raise
-            logger.warning(
-                "%s hit retryable upstream error (attempt %s/%s): %s",
-                trace_name,
-                attempt + 1,
-                UPSTREAM_503_MAX_RETRIES + 1,
-                exc,
-            )
-            await backoff_sleep(attempt)
-    raise RuntimeError(f"{trace_name} failed after retries.")
 
 
 async def get_result_image_filename(user_id: str, session_id: str) -> Optional[str]:
-    session = await runner.session_service.get_session(
-        app_name=APP_NAME,
-        user_id=user_id,
-        session_id=session_id,
-    )
-    if session is None:
-        return None
-    return session.state.get("latest_result_image") or session.state.get("last_generated_rendering")
+    """Read latest generated image filename from the DB state snapshot."""
+    state = session_state_snapshot(session_id=session_id, user_id=user_id)
+    return state.get("latest_result_image") or state.get("last_generated_rendering")
 
 
 async def stream_text_sse(text: str, *, chunk_size: int = 28) -> AsyncGenerator[str, None]:
@@ -439,6 +365,12 @@ def normalize_assistant_output(text: str) -> str:
 
     normalized = normalize_currency_ranges(normalized)
     normalized = normalize_area_units(normalized)
+    normalized = re.sub(
+        r"Layout\s*:\s*PRESERVED\s*EXACTLY",
+        "布局：完全保留",
+        normalized,
+        flags=re.IGNORECASE,
+    )
     normalized = re.sub(r"\*\*Images Provided:\*\*", "**图片输入情况：**", normalized)
     normalized = re.sub(r"\*\*Room Details:\*\*", "**空间信息：**", normalized)
     normalized = re.sub(r"\*\*EXACT LAYOUT TO PRESERVE.*?\*\*", "**需保留的原始布局：**", normalized)
@@ -740,44 +672,12 @@ def extract_style_from_message(message: str) -> str:
     return ""
 
 
-async def google_cse_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
-    if not GOOGLE_CSE_API_KEY or not GOOGLE_CSE_CX:
-        return []
-
-    def _do_request() -> list[dict[str, str]]:
-        params = urlencode(
-            {
-                "key": GOOGLE_CSE_API_KEY,
-                "cx": GOOGLE_CSE_CX,
-                "q": query,
-                "num": max(1, min(max_results, 10)),
-                "lr": "lang_zh-CN",
-                "safe": "active",
-            }
-        )
-        url = f"https://www.googleapis.com/customsearch/v1?{params}"
-        with urlopen(url, timeout=8) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        items = payload.get("items") or []
-        results: list[dict[str, str]] = []
-        for item in items:
-            link = (item.get("link") or "").strip()
-            if not link:
-                continue
-            results.append(
-                {
-                    "title": strip_html(item.get("title") or "参考链接"),
-                    "url": link,
-                    "snippet": strip_html(item.get("snippet") or ""),
-                    "source": "Google",
-                }
-            )
-        return results
-
+async def web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
+    """统一搜索入口 — 使用百度千帆 AI 搜索 API"""
     try:
-        return await asyncio.to_thread(_do_request)
+        return await baidu_web_search(query, max_results=max_results)
     except Exception as exc:
-        logger.warning("Google CSE search failed: %s", exc)
+        logger.warning("百度搜索失败: %s", exc)
         return []
 
 
@@ -934,31 +834,24 @@ async def search_furniture_purchase_links(query: str) -> list[dict[str, str]]:
     normalized_query = (query or "家具 同款").strip()
     all_links: list[dict[str, str]] = []
 
-    if not GOOGLE_CSE_API_KEY or not GOOGLE_CSE_CX:
-        logger.info("Google CSE not configured for furniture search, using platform fallback links.")
-        return build_platform_search_links(normalized_query)
-
+    # 使用百度搜索查找家具购买链接
     search_queries = [
         f"{normalized_query} 家具 同款 购买",
-        f"{normalized_query} site:taobao.com",
-        f"{normalized_query} site:jd.com",
-        f"{normalized_query} site:1688.com",
-        f"{normalized_query} site:pinduoduo.com",
+        f"{normalized_query} 淘宝 京东 购买链接",
     ]
 
     for search_query in search_queries:
-        links = await google_cse_search(search_query, max_results=4)
+        links = await web_search(search_query, max_results=4)
         if links:
-            logger.info("Furniture link search succeeded for query: %s", search_query)
-        else:
-            logger.info("Furniture link search returned empty for query: %s", search_query)
+            logger.info("家具搜索成功: %s", search_query)
         all_links.extend(links)
 
     deduped = dedupe_links(all_links, limit=6)
     if deduped:
         return deduped
 
-    logger.info("Falling back to platform search links for furniture query: %s", normalized_query)
+    # 百度搜索无结果时，降级为平台直链
+    logger.info("百度搜索无结果，使用平台搜索链接: %s", normalized_query)
     return build_platform_search_links(normalized_query)
 
 
@@ -968,10 +861,10 @@ async def analyze_furniture_image_with_links(
     mime_type: str,
     user_prompt: str,
 ) -> tuple[str, list[dict[str, str]]]:
-    from google import genai
-    from google.genai import types
+    from llm_provider import get_vision_llm, encode_image_to_base64_message
+    
 
-    client = genai.Client()
+    llm = get_vision_llm(temperature=0.2)
     prompt = f"""
 你是家居识图与选购助手。请根据用户上传的图片识别最主要的一件家具或软装对象，并用简体中文输出。
 
@@ -991,19 +884,13 @@ async def analyze_furniture_image_with_links(
 用户补充要求：{user_prompt or "请帮我识别并给购买链接。"}
 """
 
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=[
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(text=prompt),
-                    types.Part.from_bytes(data=image_data, mime_type=mime_type or "image/png"),
-                ],
-            )
-        ],
-    )
-    analysis_text = normalize_assistant_output((response.text or "").strip())
+    image_part = encode_image_to_base64_message(image_data, mime_type or "image/png")
+    message = HumanMessage(content=[
+        {"type": "text", "text": prompt},
+        image_part,
+    ])
+    response = llm.invoke([message])
+    analysis_text = normalize_assistant_output((response.content or "").strip())
 
     keywords = extract_search_keywords(analysis_text)
     query = keywords or "家具 同款 购买"
@@ -1056,30 +943,23 @@ async def process_render_job(
     session_id: str,
     request_message: str,
 ) -> None:
-    from google.genai import types
-
     update_render_job(job_id, status="running")
     try:
-        session = await ensure_adk_session(user_id=user_id, session_id=session_id)
-        session.state["background_render_job"] = job_id
-
+        from langchain_core.messages import HumanMessage
         prompt = (
             "请根据当前会话里已经完成的空间分析和设计方案，直接生成效果图。"
             "不要重复完整文字方案，只需调用渲染工具，并在成功后用2到3句中文简短说明画面亮点。"
             "如果渲染失败，请明确说明文字方案已完成，但效果图服务繁忙，建议稍后重试。"
             f"\n\n用户原始诉求：{request_message}"
         )
-        def make_events():
-            return render_runner.run_async(
-                user_id=user_id,
-                session_id=session_id,
-                new_message=types.Content(role="user", parts=[types.Part.from_text(text=prompt)]),
-            )
-
-        reply_text = await extract_reply_text_with_retry(
-            make_events,
-            trace_name="process_render_job",
+        
+        config = {"configurable": {"thread_id": session_id, "user_id": user_id, "session_id": session_id}}
+        response = await render_graph.ainvoke(
+            {"messages": [HumanMessage(content=prompt)], "session_id": session_id, "user_id": user_id},
+            config=config
         )
+        
+        reply_text = response["messages"][-1].content
         result_filename = await get_result_image_filename(user_id, session_id)
         if result_filename:
             update_render_job(job_id, status="completed", result_filename=result_filename)
@@ -1136,71 +1016,23 @@ def persist_chat_records(
     )
 
 
-def iter_agent_updates(event: Any) -> list[dict[str, str]]:
-    updates: list[dict[str, str]] = []
-    author = getattr(event, "author", None)
-    actions = getattr(event, "actions", None)
-
-    if author in TRACKED_AGENTS:
-        updates.append({"agentName": author, "status": "processing"})
-
-        end_of_agent = getattr(actions, "end_of_agent", None) if actions else None
-        if end_of_agent or getattr(event, "is_final_response", lambda: False)():
-            updates.append({"agentName": author, "status": "completed"})
-
-    transfer_to_agent = getattr(actions, "transfer_to_agent", None) if actions else None
-    if isinstance(transfer_to_agent, str) and transfer_to_agent in TRACKED_AGENTS:
-        updates.append({"agentName": transfer_to_agent, "status": "processing"})
-
-    deduped: list[dict[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for update in updates:
-        key = (update["agentName"], update["status"])
-        if key not in seen:
-            seen.add(key)
-            deduped.append(update)
-    return deduped
+# (ADK iter_agent_updates removed)
 
 
-def extract_text_from_event(event: Any) -> str:
-    if not getattr(event, "content", None) or not event.content.parts:
-        return ""
-    return "".join(part.text for part in event.content.parts if getattr(part, "text", None))
+# (ADK extract_text_from_event removed)
+
 
 
 @app.on_event("startup")
 async def startup_event():
-    global runner, render_runner, artifact_service
-    from google.adk.artifacts.file_artifact_service import FileArtifactService
-    from google.adk.runners import Runner
-    from google.adk.sessions.in_memory_session_service import InMemorySessionService
-
     os.makedirs(ARTIFACT_ROOT, exist_ok=True)
     init_db()
-
-    session_service = InMemorySessionService()
-    artifact_service = FileArtifactService(ARTIFACT_ROOT)
-
-    runner = Runner(
-        agent=root_agent,
-        app_name=APP_NAME,
-        session_service=session_service,
-        artifact_service=artifact_service,
-        auto_create_session=True,
-    )
-    render_runner = Runner(
-        agent=project_coordinator,
-        app_name=APP_NAME,
-        session_service=session_service,
-        artifact_service=artifact_service,
-        auto_create_session=True,
-    )
-    logger.info("ADK Runner initialized and ready.")
+    logger.info("LangGraph Server initialized and ready.")
 
 
 @app.get("/api/health")
 async def health_check():
-    has_key = "GOOGLE_API_KEY" in os.environ or "GEMINI_API_KEY" in os.environ
+    has_key = "LLM_API_KEY" in os.environ
     return {"status": "ok", "api_key_configured": has_key}
 
 
@@ -1225,7 +1057,8 @@ async def recommended_prompts_endpoint(user_id: str = DEFAULT_USER, limit: int =
 
 @app.post("/api/search/google-links")
 async def google_links_endpoint(payload: GoogleLinksRequest):
-    links = await google_cse_search(payload.query, max_results=payload.max_results)
+    """搜索链接接口（保持 API 路径不变以兼容前端，底层已切换为百度搜索）"""
+    links = await web_search(payload.query, max_results=payload.max_results)
     return {"links": links}
 
 
@@ -1419,46 +1252,32 @@ async def create_render_job_endpoint(
 
 @app.get("/api/sessions/{session_id}/assets/{filename:path}", name="get_asset")
 async def get_asset(session_id: str, filename: str, user_id: str = DEFAULT_USER):
-    part = await artifact_service.load_artifact(
-        app_name=APP_NAME,
-        user_id=user_id,
-        session_id=session_id,
-        filename=filename,
-    )
-    if part is None or part.inline_data is None or not part.inline_data.data:
+    filepath = os.path.join(ARTIFACT_ROOT, filename)
+    if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Asset not found.")
-    return Response(
-        content=part.inline_data.data,
-        media_type=part.inline_data.mime_type or "application/octet-stream",
-    )
+    return FileResponse(filepath)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: Request, payload: ChatRequest):
     require_api_key()
     ensure_session(session_id=payload.session_id, user_id=payload.user_id, title=payload.message[:80] or "新对话")
-    await ensure_adk_session(user_id=payload.user_id, session_id=payload.session_id)
 
     try:
-        from google.genai import types
-
+        from langchain_core.messages import HumanMessage
         guarded_message = build_non_image_guarded_prompt(payload.message)
-        message_content = types.Content(role="user", parts=[types.Part.from_text(text=guarded_message)])
-        def make_events():
-            return runner.run_async(
-                user_id=payload.user_id,
-                session_id=payload.session_id,
-                new_message=message_content,
-            )
-
-        reply_text = await extract_reply_text_with_retry(
-            make_events,
-            trace_name="chat_endpoint",
+        
+        config = {"configurable": {"thread_id": payload.session_id, "user_id": payload.user_id, "session_id": payload.session_id}}
+        response = await graph.ainvoke(
+            {"messages": [HumanMessage(content=guarded_message)], "session_id": payload.session_id, "user_id": payload.user_id},
+            config=config,
         )
+        reply_text = response["messages"][-1].content
+        
         result_filename = await get_result_image_filename(payload.user_id, payload.session_id)
         references = []
         if should_include_price_links(guarded_message, reply_text):
-            references = await google_cse_search(
+            references = await web_search(
                 f"{guarded_message} 装修 价格 材料 购买",
                 max_results=5,
             )
@@ -1486,76 +1305,43 @@ async def chat_endpoint(request: Request, payload: ChatRequest):
 async def chat_stream_endpoint(payload: ChatRequest):
     require_api_key()
     ensure_session(session_id=payload.session_id, user_id=payload.user_id, title=payload.message[:80] or "新对话")
-    await ensure_adk_session(user_id=payload.user_id, session_id=payload.session_id)
 
     try:
-        from google.genai import types
-
+        from langchain_core.messages import HumanMessage
         guarded_message = build_non_image_guarded_prompt(payload.message)
-        message_content = types.Content(role="user", parts=[types.Part.from_text(text=guarded_message)])
+        
         async def event_stream():
-            partial_reply_chunks: list[str] = []
-            final_reply_texts: list[str] = []
-            stream_succeeded = False
-            for attempt in range(UPSTREAM_503_MAX_RETRIES + 1):
-                try:
-                    events = runner.run_async(
-                        user_id=payload.user_id,
-                        session_id=payload.session_id,
-                        new_message=message_content,
-                        run_config=RunConfig(streaming_mode=StreamingMode.SSE),
-                    )
-                    async for event in events:
-                        for agent_update in iter_agent_updates(event):
-                            yield f"data: {json.dumps({'type': 'agent', **agent_update})}\n\n"
-
-                        text = extract_text_from_event(event)
-                        if not text:
-                            continue
-
-                        if getattr(event, "partial", False):
-                            partial_reply_chunks.append(text)
-                            async for chunk in stream_text_sse(normalize_assistant_output(text)):
-                                yield chunk
-                        else:
-                            final_reply_texts.append(text)
-                            if not partial_reply_chunks:
-                                async for chunk in stream_text_sse(normalize_assistant_output(text)):
-                                    yield chunk
-                    stream_succeeded = True
-                    break
-                except Exception as exc:
-                    can_retry = (
-                        is_retryable_upstream_error(exc)
-                        and attempt < UPSTREAM_503_MAX_RETRIES
-                        and not partial_reply_chunks
-                        and not final_reply_texts
-                    )
-                    if can_retry:
-                        logger.warning(
-                            "chat_stream_endpoint retrying due to upstream 503 (attempt %s/%s): %s",
-                            attempt + 1,
-                            UPSTREAM_503_MAX_RETRIES + 1,
-                            exc,
-                        )
-                        await backoff_sleep(attempt)
-                        continue
-                    logger.error("Error during chat stream iteration: %s", exc)
-                    yield f"data: {json.dumps({'type': 'error', 'message': '当前网络或模型服务暂时不稳定，请稍后重试。'})}\n\n"
-                    yield "data: [DONE]\n\n"
-                    return
-
-            if not stream_succeeded:
-                yield f"data: {json.dumps({'type': 'error', 'message': '当前模型服务繁忙，请稍后重试。'})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-
-            assistant_message = normalize_assistant_output(
-                "".join(final_reply_texts) or "".join(partial_reply_chunks)
-            )
+            config = {"configurable": {"thread_id": payload.session_id, "user_id": payload.user_id, "session_id": payload.session_id}}
+            input_state = {"messages": [HumanMessage(content=guarded_message)], "session_id": payload.session_id, "user_id": payload.user_id}
+            
+            final_reply = []
+            
+            async for event in graph.astream_events(input_state, config=config, version="v1"):
+                kind = event["event"]
+                name = event.get("name", "")
+                
+                # Yield agent node updates
+                if kind == "on_chat_model_start":
+                    yield f"data: {{ \"type\": \"agent\", \"name\": \"LLM Reasoning\", \"status\": \"running\" }}\n\n"
+                elif kind == "on_tool_start":
+                    yield f"data: {{ \"type\": \"agent\", \"name\": \"Tool: {name}\", \"status\": \"running\" }}\n\n"
+                elif kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if getattr(chunk, "content", None):
+                        # Some langgraph events bundle strings
+                        content_str = chunk.content
+                        if isinstance(content_str, str):
+                            node = (event.get("metadata") or {}).get("langgraph_node")
+                            if node == "router":
+                                continue
+                            final_reply.append(content_str)
+                            yield f"data: {{ \"type\": \"token\", \"content\": {json.dumps(content_str)} }}\n\n"
+                            
+            assistant_message = normalize_assistant_output("".join(final_reply))
+            
             references: list[dict[str, str]] = []
             if should_include_price_links(guarded_message, assistant_message):
-                references = await google_cse_search(
+                references = await web_search(
                     f"{guarded_message} 装修 价格 材料 购买",
                     max_results=5,
                 )
@@ -1627,9 +1413,9 @@ async def chat_with_image_endpoint(
 
     require_api_key()
     ensure_session(session_id=session_id, user_id=user_id, title=message[:80] or "新对话")
-    await ensure_adk_session(user_id=user_id, session_id=session_id)
 
     try:
+        from langchain_core.messages import HumanMessage
         effective_message = message if ((current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image) else build_non_image_guarded_prompt(message)
         message_content, _uploaded_assets = await prepare_message_content(
             message=effective_message,
@@ -1640,21 +1426,18 @@ async def chat_with_image_endpoint(
             current_room_image=current_room_image,
             image=image,
         )
-        def make_events():
-            return runner.run_async(
-                user_id=user_id,
-                session_id=session_id,
-                new_message=message_content,
-            )
-
-        reply_text = await extract_reply_text_with_retry(
-            make_events,
-            trace_name="chat_with_image_endpoint",
+        
+        config = {"configurable": {"thread_id": session_id, "user_id": user_id, "session_id": session_id}}
+        response = await graph.ainvoke(
+            {"messages": [message_content], "session_id": session_id, "user_id": user_id},
+            config=config,
         )
+        reply_text = response["messages"][-1].content
+        
         result_filename = await get_result_image_filename(user_id, session_id)
         references = []
         if should_include_price_links(effective_message, reply_text):
-            references = await google_cse_search(
+            references = await web_search(
                 f"{effective_message} 装修 价格 材料 购买",
                 max_results=5,
             )
@@ -1691,9 +1474,9 @@ async def chat_with_image_stream_endpoint(
 ):
     require_api_key()
     ensure_session(session_id=session_id, user_id=user_id, title=message[:80] or "新对话")
-    await ensure_adk_session(user_id=user_id, session_id=session_id)
 
     try:
+        from langchain_core.messages import HumanMessage
         effective_message = message if ((current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image) else build_non_image_guarded_prompt(message)
         message_content, _uploaded_assets = await prepare_message_content(
             message=effective_message,
@@ -1704,69 +1487,36 @@ async def chat_with_image_stream_endpoint(
             current_room_image=current_room_image,
             image=image,
         )
+        
         async def event_stream():
-            partial_reply_chunks: list[str] = []
-            final_reply_texts: list[str] = []
-            stream_succeeded = False
-            for attempt in range(UPSTREAM_503_MAX_RETRIES + 1):
-                try:
-                    events = runner.run_async(
-                        user_id=user_id,
-                        session_id=session_id,
-                        new_message=message_content,
-                        run_config=RunConfig(streaming_mode=StreamingMode.SSE),
-                    )
-                    async for event in events:
-                        for agent_update in iter_agent_updates(event):
-                            yield f"data: {json.dumps({'type': 'agent', **agent_update})}\n\n"
-
-                        text = extract_text_from_event(event)
-                        if not text:
-                            continue
-
-                        if getattr(event, "partial", False):
-                            partial_reply_chunks.append(text)
-                            async for chunk in stream_text_sse(normalize_assistant_output(text)):
-                                yield chunk
-                        else:
-                            final_reply_texts.append(text)
-                            if not partial_reply_chunks:
-                                async for chunk in stream_text_sse(normalize_assistant_output(text)):
-                                    yield chunk
-                    stream_succeeded = True
-                    break
-                except Exception as exc:
-                    can_retry = (
-                        is_retryable_upstream_error(exc)
-                        and attempt < UPSTREAM_503_MAX_RETRIES
-                        and not partial_reply_chunks
-                        and not final_reply_texts
-                    )
-                    if can_retry:
-                        logger.warning(
-                            "chat_with_image_stream_endpoint retrying due to upstream 503 (attempt %s/%s): %s",
-                            attempt + 1,
-                            UPSTREAM_503_MAX_RETRIES + 1,
-                            exc,
-                        )
-                        await backoff_sleep(attempt)
-                        continue
-                    logger.error("Error during chat-with-image stream iteration: %s", exc)
-                    yield f"data: {json.dumps({'type': 'error', 'message': '当前网络或模型服务暂时不稳定，请稍后重试。'})}\n\n"
-                    yield "data: [DONE]\n\n"
-                    return
-
-            if not stream_succeeded:
-                yield f"data: {json.dumps({'type': 'error', 'message': '当前模型服务繁忙，请稍后重试。'})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-
-            assistant_message = normalize_assistant_output(
-                "".join(final_reply_texts) or "".join(partial_reply_chunks)
-            )
+            config = {"configurable": {"thread_id": session_id, "user_id": user_id, "session_id": session_id}}
+            input_state = {"messages": [message_content], "session_id": session_id, "user_id": user_id}
+            final_reply = []
+            
+            async for event in graph.astream_events(input_state, config=config, version="v1"):
+                kind = event["event"]
+                name = event.get("name", "")
+                
+                if kind == "on_chat_model_start":
+                    yield f"data: {{ \"type\": \"agent\", \"name\": \"LLM Reasoning\", \"status\": \"running\" }}\n\n"
+                elif kind == "on_tool_start":
+                    yield f"data: {{ \"type\": \"agent\", \"name\": \"Tool: {name}\", \"status\": \"running\" }}\n\n"
+                elif kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if getattr(chunk, "content", None):
+                        content_str = chunk.content
+                        if isinstance(content_str, str):
+                            node = (event.get("metadata") or {}).get("langgraph_node")
+                            if node == "router":
+                                continue
+                            final_reply.append(content_str)
+                            yield f"data: {{ \"type\": \"token\", \"content\": {json.dumps(content_str)} }}\n\n"
+            
+            assistant_message = normalize_assistant_output("".join(final_reply))
+            
             references: list[dict[str, str]] = []
             if should_include_price_links(effective_message, assistant_message):
-                references = await google_cse_search(
+                references = await web_search(
                     f"{effective_message} 装修 价格 材料 购买",
                     max_results=5,
                 )
@@ -1781,6 +1531,7 @@ async def chat_with_image_stream_endpoint(
                 result_filename=None,
                 references=references,
             )
+            
             if (current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image:
                 job_id = await queue_render_job(
                     user_id=user_id,

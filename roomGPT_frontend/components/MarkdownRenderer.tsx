@@ -1,50 +1,23 @@
 "use client";
 
 import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 
 interface MarkdownRendererProps {
   content: string;
 }
 
-function renderInline(text: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+function normalizeContent(rawContent: string): string {
+  const normalizedInput = rawContent.replace(/\r\n/g, "\n");
 
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
-    }
+  // Some model replies are accidentally wrapped with fenced code blocks.
+  // Unwrap the outer fence so markdown can render normally.
+  const wrappedFenceMatch = normalizedInput.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```\s*$/);
+  const unwrapped = wrappedFenceMatch ? wrappedFenceMatch[1] : normalizedInput;
 
-    const token = match[0];
-    if (token.startsWith("**") && token.endsWith("**")) {
-      nodes.push(<strong key={`${match.index}-bold`}>{token.slice(2, -2)}</strong>);
-    } else if (token.startsWith("`") && token.endsWith("`")) {
-      nodes.push(
-        <code
-          key={`${match.index}-code`}
-          className="rounded bg-[#F3EEE5] px-1.5 py-0.5 text-[0.95em] text-[#6C5533]"
-        >
-          {token.slice(1, -1)}
-        </code>
-      );
-    } else if (token.startsWith("*") && token.endsWith("*")) {
-      nodes.push(<em key={`${match.index}-italic`}>{token.slice(1, -1)}</em>);
-    }
-
-    lastIndex = pattern.lastIndex;
-  }
-
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
-  }
-
-  return nodes;
-}
-
-function normalizeLines(rawContent: string): string[] {
-  const rawLines = rawContent.replace(/\r\n/g, "\n").split("\n");
+  const rawLines = unwrapped.split("\n");
   const expanded: string[] = [];
 
   rawLines.forEach((line) => {
@@ -59,224 +32,64 @@ function normalizeLines(rawContent: string): string[] {
         return;
       }
     }
+    // Drop standalone fence lines that occasionally leak into non-code responses.
+    if (/^```[a-zA-Z0-9_-]*\s*$/.test(trimmed)) {
+      return;
+    }
     expanded.push(line);
   });
 
-  return expanded;
-}
-
-function isTableSeparatorRow(line: string): boolean {
-  const cleaned = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-  if (!cleaned) return false;
-  return cleaned
-    .split("|")
-    .map((cell) => cell.trim())
-    .every((cell) => /^:?-{3,}:?$/.test(cell));
-}
-
-function parseTableRow(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((cell) => cell.trim());
-}
-
-function isTableCandidate(line: string): boolean {
-  const trimmed = line.trim();
-  if (!trimmed.includes("|")) return false;
-  const pipeCount = (trimmed.match(/\|/g) || []).length;
-  return pipeCount >= 2;
+  return expanded.join("\n");
 }
 
 export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
-  const lines = normalizeLines(content);
-  const elements: React.ReactNode[] = [];
-  let paragraphBuffer: string[] = [];
-  let listBuffer: { type: "ul" | "ol"; items: string[] } | null = null;
-  let tableBuffer: string[] = [];
-  let codeBuffer: string[] = [];
-  let inCodeBlock = false;
+  const normalized = normalizeContent(content || "");
 
-  const flushParagraph = () => {
-    if (!paragraphBuffer.length) return;
-    const text = paragraphBuffer.join(" ");
-    elements.push(
-      <p key={`p-${elements.length}`} className="mb-3 break-words [overflow-wrap:anywhere] leading-7">
-        {renderInline(text)}
-      </p>
-    );
-    paragraphBuffer = [];
-  };
-
-  const flushList = () => {
-    if (!listBuffer) return;
-    const Tag = listBuffer.type;
-    elements.push(
-      <Tag
-        key={`list-${elements.length}`}
-        className={`mb-3 pl-5 break-words [overflow-wrap:anywhere] leading-7 ${Tag === "ul" ? "list-disc" : "list-decimal"}`}
+  return (
+    <div className="markdown-content min-w-0 text-sm [overflow-wrap:anywhere] sm:text-base">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
+        components={{
+          h1: ({ children }) => <h1 className="mb-3 mt-2 text-2xl font-semibold">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-3 mt-2 text-xl font-semibold">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-2 mt-2 text-lg font-semibold">{children}</h3>,
+          p: ({ children }) => <p className="mb-3 break-words [overflow-wrap:anywhere] leading-7">{children}</p>,
+          ul: ({ children }) => <ul className="mb-3 list-disc pl-5 break-words [overflow-wrap:anywhere] leading-7">{children}</ul>,
+          ol: ({ children }) => (
+            <ol className="mb-3 list-decimal pl-5 break-words [overflow-wrap:anywhere] leading-7">{children}</ol>
+          ),
+          li: ({ children }) => <li className="break-words [overflow-wrap:anywhere]">{children}</li>,
+          blockquote: ({ children }) => (
+            <blockquote className="mb-3 break-words [overflow-wrap:anywhere] border-l-4 border-[#C8B28B] bg-[#FAF6EF] px-4 py-2 italic text-[#6B6459]">
+              {children}
+            </blockquote>
+          ),
+          table: ({ children }) => (
+            <div className="mb-3 overflow-x-auto rounded-xl border border-[#8B6F47]/15">
+              <table className="min-w-full border-collapse text-sm">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-[#F7F1E7] text-[#2D2D2D]">{children}</thead>,
+          th: ({ children }) => (
+            <th className="border border-[#8B6F47]/15 px-3 py-2 text-left font-semibold">{children}</th>
+          ),
+          tbody: ({ children }) => <tbody className="bg-white/70">{children}</tbody>,
+          td: ({ children }) => <td className="border border-[#8B6F47]/15 px-3 py-2 align-top">{children}</td>,
+          pre: ({ children }) => (
+            <pre className="mb-3 overflow-x-auto rounded-xl bg-[#2A241F] px-4 py-3 text-sm text-[#F6F1E8]">{children}</pre>
+          ),
+          code: ({ inline, children }) =>
+            inline ? (
+              <code className="rounded bg-[#F3EEE5] px-1.5 py-0.5 text-[0.95em] text-[#6C5533]">{children}</code>
+            ) : (
+              <code>{children}</code>
+            ),
+        }}
       >
-        {listBuffer.items.map((item, index) => (
-          <li key={`${Tag}-${index}`} className="break-words [overflow-wrap:anywhere]">
-            {renderInline(item)}
-          </li>
-        ))}
-      </Tag>
-    );
-    listBuffer = null;
-  };
-
-  const flushTable = () => {
-    if (!tableBuffer.length) return;
-    const rows = tableBuffer.map(parseTableRow);
-    if (!rows.length) {
-      tableBuffer = [];
-      return;
-    }
-
-    const hasSeparator = tableBuffer.length > 1 && isTableSeparatorRow(tableBuffer[1]);
-    const header = rows[0] || [];
-    const bodyRows = hasSeparator ? rows.slice(2) : rows.slice(1);
-
-    elements.push(
-      <div key={`table-${elements.length}`} className="mb-3 overflow-x-auto rounded-xl border border-[#8B6F47]/15">
-        <table className="min-w-full border-collapse text-sm">
-          <thead className="bg-[#F7F1E7] text-[#2D2D2D]">
-            <tr>
-              {header.map((cell, index) => (
-                <th key={`h-${index}`} className="border border-[#8B6F47]/15 px-3 py-2 text-left font-semibold">
-                  {renderInline(cell)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="bg-white/70">
-            {bodyRows.map((row, rowIndex) => (
-              <tr key={`r-${rowIndex}`}>
-                {row.map((cell, cellIndex) => (
-                  <td key={`c-${rowIndex}-${cellIndex}`} className="border border-[#8B6F47]/15 px-3 py-2 align-top">
-                    {renderInline(cell)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-
-    tableBuffer = [];
-  };
-
-  const flushCode = () => {
-    if (!codeBuffer.length) return;
-    elements.push(
-      <pre
-        key={`code-${elements.length}`}
-        className="mb-3 overflow-x-auto rounded-xl bg-[#2A241F] px-4 py-3 text-sm text-[#F6F1E8]"
-      >
-        <code>{codeBuffer.join("\n")}</code>
-      </pre>
-    );
-    codeBuffer = [];
-  };
-
-  lines.forEach((line) => {
-    if (line.trim().startsWith("```")) {
-      flushParagraph();
-      flushList();
-      flushTable();
-      if (inCodeBlock) {
-        flushCode();
-      }
-      inCodeBlock = !inCodeBlock;
-      return;
-    }
-
-    if (inCodeBlock) {
-      codeBuffer.push(line);
-      return;
-    }
-
-    const trimmed = line.trim();
-    if (!trimmed) {
-      flushParagraph();
-      flushList();
-      flushTable();
-      return;
-    }
-
-    if (isTableCandidate(trimmed)) {
-      flushParagraph();
-      flushList();
-      tableBuffer.push(trimmed);
-      return;
-    }
-
-    flushTable();
-
-    const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)$/);
-    if (headingMatch) {
-      flushParagraph();
-      flushList();
-      const level = headingMatch[1].length;
-      const HeadingTag = `h${level}` as keyof JSX.IntrinsicElements;
-      const className =
-        level === 1
-          ? "mb-3 mt-2 text-2xl font-semibold"
-          : level === 2
-          ? "mb-3 mt-2 text-xl font-semibold"
-          : "mb-2 mt-2 text-lg font-semibold";
-      elements.push(
-        <HeadingTag key={`h-${elements.length}`} className={className}>
-          {renderInline(headingMatch[2])}
-        </HeadingTag>
-      );
-      return;
-    }
-
-    const quoteMatch = trimmed.match(/^>\s?(.*)$/);
-    if (quoteMatch) {
-      flushParagraph();
-      flushList();
-      elements.push(
-        <blockquote
-          key={`quote-${elements.length}`}
-          className="mb-3 break-words [overflow-wrap:anywhere] border-l-4 border-[#C8B28B] bg-[#FAF6EF] px-4 py-2 italic text-[#6B6459]"
-        >
-          {renderInline(quoteMatch[1])}
-        </blockquote>
-      );
-      return;
-    }
-
-    const unorderedMatch = trimmed.match(/^[-*]\s+(.*)$/);
-    const orderedMatch = trimmed.match(/^\d+\.\s+(.*)$/);
-    if (unorderedMatch || orderedMatch) {
-      flushParagraph();
-      const nextType = unorderedMatch ? "ul" : "ol";
-      const item = (unorderedMatch || orderedMatch)![1];
-      if (!listBuffer || listBuffer.type !== nextType) {
-        flushList();
-        listBuffer = { type: nextType, items: [] };
-      }
-      listBuffer.items.push(item);
-      return;
-    }
-
-    flushList();
-    paragraphBuffer.push(trimmed);
-  });
-
-  flushParagraph();
-  flushList();
-  flushTable();
-  if (inCodeBlock) {
-    flushCode();
-  }
-
-  return <div className="markdown-content min-w-0 text-sm [overflow-wrap:anywhere] sm:text-base">{elements}</div>;
+        {normalized}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
