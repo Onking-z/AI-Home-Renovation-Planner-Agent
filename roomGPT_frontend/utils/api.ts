@@ -49,6 +49,12 @@ function buildChatMessage(data: {
     snippet?: string;
     source?: string;
   }>;
+  attachments?: Array<{
+    id: string;
+    url: string;
+    label: string;
+    kind?: "general" | "current_room" | "inspiration" | "vision_match";
+  }>;
   created_at?: string;
 }): ChatMessage {
   return {
@@ -57,6 +63,7 @@ function buildChatMessage(data: {
     content: data.content,
     imageUrl: data.imageUrl || undefined,
     references: data.references || undefined,
+    attachments: data.attachments || undefined,
     timestamp: data.created_at ? new Date(data.created_at) : new Date(),
   };
 }
@@ -161,6 +168,7 @@ export async function fetchSessionMessages(sessionId: string): Promise<ChatMessa
       content: message.content,
       imageUrl: message.imageUrl,
       references: message.references,
+      attachments: message.attachments,
       created_at: message.created_at,
     })
   );

@@ -31,6 +31,7 @@ from db import (
     list_sessions,
     save_asset,
     save_message,
+    save_message_assets,
     set_session_pinned,
     session_state_snapshot,
     update_render_job,
@@ -143,6 +144,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     imageUrl: Optional[str] = None
+    attachments: Optional[list[dict[str, str]]] = None
     references: Optional[list[dict[str, str]]] = None
     created_at: str
 
@@ -356,6 +358,9 @@ def normalize_assistant_output(text: str) -> str:
         return text
 
     normalized = text.replace("\r\n", "\n")
+    normalized = re.sub(r"^\s*(?:```|~~~)[^\n]*\n", "", normalized)
+    normalized = re.sub(r"\n\s*(?:```|~~~)\s*$", "", normalized)
+    normalized = re.sub(r"^\s*(?:```|~~~)[^\n]*$", "", normalized, flags=re.MULTILINE)
     for source, target in HEADING_REPLACEMENTS.items():
         normalized = normalized.replace(source, target)
     for source, target in TERM_REPLACEMENTS.items():
@@ -365,6 +370,8 @@ def normalize_assistant_output(text: str) -> str:
 
     normalized = normalize_currency_ranges(normalized)
     normalized = normalize_area_units(normalized)
+    normalized = re.sub(r"Renovation\s*Scope\s*:", "改造范围：", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"Surface\s*Finish\s*Changes\s*:", "表面改造项：", normalized, flags=re.IGNORECASE)
     normalized = re.sub(
         r"Layout\s*:\s*PRESERVED\s*EXACTLY",
         "布局：完全保留",
@@ -1005,8 +1012,16 @@ def persist_chat_records(
     assistant_message: str,
     result_filename: Optional[str] = None,
     references: Optional[list[dict[str, str]]] = None,
+    user_attachments: Optional[list[dict[str, str]]] = None,
 ) -> None:
-    save_message(session_id=session_id, user_id=user_id, role="user", content=user_message)
+    user_message_id = save_message(session_id=session_id, user_id=user_id, role="user", content=user_message)
+    if user_attachments:
+        save_message_assets(
+            message_id=user_message_id,
+            session_id=session_id,
+            user_id=user_id,
+            attachments=user_attachments,
+        )
     save_message(
         session_id=session_id,
         user_id=user_id,
@@ -1210,6 +1225,17 @@ async def get_session_messages(request: Request, session_id: str, user_id: str =
             imageUrl=build_asset_url(request, session_id, message["image_filename"], user_id)
             if message["image_filename"]
             else None,
+            attachments=[
+                {
+                    "id": f"{message['id']}-{idx}",
+                    "url": build_asset_url(request, session_id, item["filename"], user_id),
+                    "label": item.get("label")
+                    or ("原图" if item.get("asset_type") == "current_room" else "灵感图" if item.get("asset_type") == "inspiration" else "图片"),
+                    "kind": item.get("asset_type") or "general",
+                }
+                for idx, item in enumerate(message.get("attachments") or [])
+            ]
+            or None,
             references=message.get("references") or [],
             created_at=message["created_at"],
         )
@@ -1417,7 +1443,7 @@ async def chat_with_image_endpoint(
     try:
         from langchain_core.messages import HumanMessage
         effective_message = message if ((current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image) else build_non_image_guarded_prompt(message)
-        message_content, _uploaded_assets = await prepare_message_content(
+        message_content, uploaded_assets = await prepare_message_content(
             message=effective_message,
             user_id=user_id,
             session_id=session_id,
@@ -1448,6 +1474,7 @@ async def chat_with_image_endpoint(
             assistant_message=reply_text,
             result_filename=result_filename,
             references=references,
+            user_attachments=uploaded_assets,
         )
         return ChatResponse(
             message=reply_text,
@@ -1478,7 +1505,7 @@ async def chat_with_image_stream_endpoint(
     try:
         from langchain_core.messages import HumanMessage
         effective_message = message if ((current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image) else build_non_image_guarded_prompt(message)
-        message_content, _uploaded_assets = await prepare_message_content(
+        message_content, uploaded_assets = await prepare_message_content(
             message=effective_message,
             user_id=user_id,
             session_id=session_id,
@@ -1530,6 +1557,7 @@ async def chat_with_image_stream_endpoint(
                 assistant_message=assistant_message,
                 result_filename=None,
                 references=references,
+                user_attachments=uploaded_assets,
             )
             
             if (current_room_images and len(current_room_images) > 0) or (inspiration_images and len(inspiration_images) > 0) or current_room_image or image:

@@ -73,6 +73,10 @@ ROUTING LOGIC:
 2. **For editing EXISTING renderings** (e.g., "make cabinets cream") -> returning 'editing'
 3. **For NEW renovation planning** (e.g., "Plan my kitchen", "Here's my space") -> returning 'planning'
    ALWAYS route here if images were uploaded in the latest message.
+
+Output requirement:
+- Return only valid structured output field `next_node`.
+- Never output any extra prose.
 """
     # Look at the most recent context to decide routing.
     messages = [SystemMessage(content=system_prompt)] + state["messages"][-3:]
@@ -159,7 +163,7 @@ def design_planner_node(state: RenovationState):
     system_prompt = """Create SPECIFIC, ACTIONABLE design plan tailored to their situation based on conversation history.
 
 OUTPUT RULES FOR CHINESE USERS:
-- Respond in Simplified Chinese unless the user explicitly asks for another language
+- 必须仅使用简体中文输出，除专有名词外不要输出英文句子或英文标题
 - Default to RMB, square meters, and Chinese renovation vocabulary
 - Avoid duplicating the same plan in multiple formats
 
@@ -171,10 +175,10 @@ ONLY specify changes to SURFACE FINISHES.
 ```
 设计完成
 
-Renovation Scope: [scope]
-Layout: PRESERVED EXACTLY
+改造范围：[范围]
+布局保留：完全保留
 
-Surface Finish Changes:
+表面改造项：
 [Cabinets, Walls, Countertops, etc.]
 
 材料清单摘要: [Details]
@@ -199,6 +203,9 @@ Parameters: artifact_filename, prompt (detailed edit instruction), asset_name
 
 **IMPORTANT - DO NOT use markdown image syntax!**
 Simply confirm the edit was successful and mention the artifact is available.
+
+Output language rule:
+- 必须仅使用简体中文回复。
 """
     messages = [SystemMessage(content=system_prompt)] + state["messages"]
     response = llm_with_tools.invoke(messages)
@@ -319,6 +326,9 @@ Do NOT repeat the full renovation plan, long budget sections, or long execution 
 
 If rendering succeeds, use only 2-3 sentences to summarize what the image shows.
 Use generate_renovation_rendering tool and build an ULTRA-DETAILED prompt using the SLC Formula.
+
+Output language rule:
+- 最终回复必须仅使用简体中文，不得输出英文标题或英文段落。
 """
     messages = [SystemMessage(content=system_prompt)] + state["messages"]
     response = llm_with_tools.invoke(messages)

@@ -14,13 +14,38 @@ function normalizeContent(rawContent: string): string {
 
   // Some model replies are accidentally wrapped with fenced code blocks.
   // Unwrap the outer fence so markdown can render normally.
-  const wrappedFenceMatch = normalizedInput.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```\s*$/);
-  const unwrapped = wrappedFenceMatch ? wrappedFenceMatch[1] : normalizedInput;
+  const wrappedFenceMatch = normalizedInput.match(/^(?:```|~~~)[a-zA-Z0-9_-]*\n([\s\S]*?)\n(?:```|~~~)\s*$/);
+  let unwrapped = wrappedFenceMatch ? wrappedFenceMatch[1] : normalizedInput;
+
+  // Remove accidental HTML code wrappers emitted by some model responses.
+  unwrapped = unwrapped.replace(/<\/?pre[^>]*>/gi, "");
+  unwrapped = unwrapped.replace(/<\/?code[^>]*>/gi, "");
+
+  // Remove leaked fence lines (including malformed/odd fences) to avoid turning
+  // regular markdown sections into full code blocks.
+  unwrapped = unwrapped.replace(/^\s*(?:```|~~~)[a-zA-Z0-9_-]*\s*$/gm, "");
+  unwrapped = unwrapped.replace(/^\s*`{3,}[^\n]*$/gm, "");
+  unwrapped = unwrapped.replace(/^\s*~{3,}[^\n]*$/gm, "");
 
   const rawLines = unwrapped.split("\n");
+
+  // If most non-empty lines are indented with 4+ spaces and look like prose/markdown,
+  // it is usually a malformed model response accidentally rendered as indented code.
+  const nonEmpty = rawLines.filter((line) => line.trim().length > 0);
+  const heavilyIndented = nonEmpty.filter((line) => /^\s{4,}/.test(line));
+  const likelyCode = nonEmpty.filter((line) => /^\s{4,}(const\s+|let\s+|var\s+|def\s+|class\s+|function\s+|if\s+|for\s+|while\s+|return\s+|import\s+|from\s+|\{|\}|\[|\]|\(|\)|<\/?[a-z])/i.test(line));
+  const shouldGlobalDeindent =
+    nonEmpty.length >= 6 &&
+    heavilyIndented.length / nonEmpty.length >= 0.7 &&
+    likelyCode.length / nonEmpty.length <= 0.25;
+
+  const adjustedLines = shouldGlobalDeindent
+    ? rawLines.map((line) => line.replace(/^\s{4}/, ""))
+    : rawLines;
+
   const expanded: string[] = [];
 
-  rawLines.forEach((line) => {
+  adjustedLines.forEach((line) => {
     const trimmed = line.trim();
     if (trimmed.includes("||") && trimmed.includes("|") && trimmed.split("|").length >= 6) {
       const parts = trimmed
@@ -33,9 +58,20 @@ function normalizeContent(rawContent: string): string {
       }
     }
     // Drop standalone fence lines that occasionally leak into non-code responses.
-    if (/^```[a-zA-Z0-9_-]*\s*$/.test(trimmed)) {
+    if (/^(?:```|~~~)[a-zA-Z0-9_-]*\s*$/.test(trimmed)) {
       return;
     }
+
+    // If a markdown/prose line is accidentally indented by 4+ spaces,
+    // de-indent it so it won't be treated as an indented code block.
+    if (
+      /^\s{4,}/.test(line) &&
+      !/^\s{4,}(const\s+|let\s+|var\s+|def\s+|class\s+|function\s+|if\s+|for\s+|while\s+|return\s+|import\s+|from\s+|\{|\}|\[|\]|\(|\)|<\/?[a-z])/i.test(line)
+    ) {
+      expanded.push(line.replace(/^\s{4}/, ""));
+      return;
+    }
+
     expanded.push(line);
   });
 

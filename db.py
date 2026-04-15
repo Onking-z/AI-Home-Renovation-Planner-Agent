@@ -73,6 +73,18 @@ def init_db() -> None:
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS message_assets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_id INTEGER NOT NULL,
+                    session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    asset_type TEXT NOT NULL,
+                    label TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(message_id) REFERENCES messages(id)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_messages_session_created
                 ON messages(session_id, created_at);
 
@@ -81,6 +93,9 @@ def init_db() -> None:
 
                 CREATE INDEX IF NOT EXISTS idx_render_jobs_session_created
                 ON render_jobs(session_id, created_at);
+
+                CREATE INDEX IF NOT EXISTS idx_message_assets_message
+                ON message_assets(message_id, created_at);
                 """
             )
             columns = conn.execute("PRAGMA table_info(sessions)").fetchall()
@@ -194,6 +209,41 @@ def save_asset(
                 (utc_now(), session_id),
             )
             conn.commit()
+        finally:
+            conn.close()
+
+
+def save_message_assets(
+    *,
+    message_id: int,
+    session_id: str,
+    user_id: str,
+    attachments: list[dict[str, Any]],
+) -> None:
+    if not attachments:
+        return
+
+    with _LOCK:
+        conn = get_connection()
+        try:
+            rows: list[tuple[Any, ...]] = []
+            for item in attachments:
+                filename = (item.get("filename") or "").strip()
+                if not filename:
+                    continue
+                asset_type = (item.get("asset_type") or "general").strip() or "general"
+                label = (item.get("label") or "").strip() or None
+                rows.append((message_id, session_id, user_id, filename, asset_type, label, utc_now()))
+
+            if rows:
+                conn.executemany(
+                    """
+                    INSERT INTO message_assets (message_id, session_id, user_id, filename, asset_type, label, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+                conn.commit()
         finally:
             conn.close()
 
@@ -374,7 +424,37 @@ def get_messages(session_id: str, user_id: str) -> list[dict[str, Any]]:
                 """,
                 (session_id, user_id),
             ).fetchall()
-            return [dict(row) for row in rows]
+            messages = [dict(row) for row in rows]
+            if not messages:
+                return messages
+
+            message_ids = [int(item["id"]) for item in messages]
+            placeholders = ",".join(["?"] * len(message_ids))
+            asset_rows = conn.execute(
+                f"""
+                SELECT message_id, filename, asset_type, label
+                FROM message_assets
+                WHERE session_id = ? AND user_id = ? AND message_id IN ({placeholders})
+                ORDER BY id ASC
+                """,
+                (session_id, user_id, *message_ids),
+            ).fetchall()
+
+            assets_by_message: dict[int, list[dict[str, Any]]] = {}
+            for row in asset_rows:
+                message_id = int(row["message_id"])
+                assets_by_message.setdefault(message_id, []).append(
+                    {
+                        "filename": row["filename"],
+                        "asset_type": row["asset_type"],
+                        "label": row["label"],
+                    }
+                )
+
+            for message in messages:
+                message["attachments"] = assets_by_message.get(int(message["id"]), [])
+
+            return messages
         finally:
             conn.close()
 
