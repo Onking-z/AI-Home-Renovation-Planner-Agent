@@ -2,6 +2,6 @@
 module.exports = {
   reactStrictMode: true,
   images: {
-    domains: ["upcdn.io", "replicate.delivery", "localhost", "127.0.0.1"],
+    domains: ["upcdn.io", "replicate.delivery", "localhost", "127.0.0.1", "124.221.23.45"],
   },
 };

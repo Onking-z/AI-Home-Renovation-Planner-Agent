@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefObject, useEffect, useRef, useState } from "react";
+import { RefObject, Suspense, useEffect, useRef, useState } from "react";
 import { isAuthenticated, login, register } from "../../utils/auth";
 
 const EyeIcon = () => (
@@ -167,7 +167,7 @@ const EyeBall = ({
 
 type AuthMode = "login" | "register";
 
-export default function AuthPage() {
+function AuthPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") || "/dream";
@@ -663,5 +663,13 @@ export default function AuthPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[linear-gradient(150deg,#f9f4eb_0%,#ede2d0_58%,#eadcca_100%)]" />}>
+      <AuthPageContent />
+    </Suspense>
   );
 }

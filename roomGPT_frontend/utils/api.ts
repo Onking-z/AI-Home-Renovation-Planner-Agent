@@ -1,8 +1,47 @@
 import { ChatMessage, SessionSummary } from "../types/chat";
 import { getCurrentSessionId } from "./session";
+import { getCurrentUser } from "./auth";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-const DEFAULT_USER_ID = "frontend_user";
+const LOCAL_BACKEND_URL = "http://localhost:8000";
+
+declare global {
+  interface Window {
+    __LUMIERE_API_BASE_LOGGED__?: boolean;
+  }
+}
+
+function resolveApiBaseUrl(): string {
+  const envValue = (process.env.NEXT_PUBLIC_BACKEND_URL || "").trim();
+  if (envValue) {
+    return envValue.replace(/\/+$/, "");
+  }
+
+  if (typeof window === "undefined") {
+    return LOCAL_BACKEND_URL;
+  }
+
+  const hostname = window.location.hostname;
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+  if (isLocal) {
+    return LOCAL_BACKEND_URL;
+  }
+
+  const protocol = window.location.protocol || "http:";
+  return `${protocol}//${hostname}:8000`;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
+
+function resolveUserId(): string {
+  const currentUser = getCurrentUser();
+  const email = (currentUser?.email || "").trim().toLowerCase();
+  return email || "frontend_user";
+}
+
+if (typeof window !== "undefined" && !window.__LUMIERE_API_BASE_LOGGED__) {
+  window.__LUMIERE_API_BASE_LOGGED__ = true;
+  console.info(`[Lumiere] API base URL: ${API_BASE_URL}`);
+}
 
 interface StreamChunk {
   type?: "content" | "image" | "agent" | "render" | "error" | "references";
@@ -109,8 +148,9 @@ async function parseSSE(
 }
 
 export async function ensureSessionExists(sessionId: string): Promise<void> {
+  const userId = resolveUserId();
   const formData = new FormData();
-  formData.append("user_id", DEFAULT_USER_ID);
+  formData.append("user_id", userId);
   formData.append("session_id", sessionId);
 
   await fetch(`${API_BASE_URL}/api/sessions`, {
@@ -120,7 +160,8 @@ export async function ensureSessionExists(sessionId: string): Promise<void> {
 }
 
 export async function fetchSessions(): Promise<SessionSummary[]> {
-  const response = await fetch(`${API_BASE_URL}/api/sessions?user_id=${DEFAULT_USER_ID}`);
+  const userId = resolveUserId();
+  const response = await fetch(`${API_BASE_URL}/api/sessions?user_id=${encodeURIComponent(userId)}`);
   if (!response.ok) {
     throw new Error("加载会话列表失败");
   }
@@ -128,8 +169,9 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
 }
 
 export async function pinSession(sessionId: string, pinned: boolean): Promise<void> {
+  const userId = resolveUserId();
   const formData = new FormData();
-  formData.append("user_id", DEFAULT_USER_ID);
+  formData.append("user_id", userId);
   formData.append("pinned", String(pinned));
 
   const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/pin`, {
@@ -143,7 +185,8 @@ export async function pinSession(sessionId: string, pinned: boolean): Promise<vo
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}?user_id=${DEFAULT_USER_ID}`, {
+  const userId = resolveUserId();
+  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}?user_id=${encodeURIComponent(userId)}`, {
     method: "DELETE",
   });
   if (!response.ok) {
@@ -153,8 +196,9 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 export async function fetchSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+  const userId = resolveUserId();
   const response = await fetch(
-    `${API_BASE_URL}/api/sessions/${sessionId}/messages?user_id=${DEFAULT_USER_ID}`
+    `${API_BASE_URL}/api/sessions/${sessionId}/messages?user_id=${encodeURIComponent(userId)}`
   );
   if (!response.ok) {
     throw new Error("加载历史消息失败");
@@ -175,12 +219,13 @@ export async function fetchSessionMessages(sessionId: string): Promise<ChatMessa
 }
 
 export async function sendChatMessage(message: string): Promise<ChatMessage> {
+  const userId = resolveUserId();
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       message,
-      user_id: DEFAULT_USER_ID,
+      user_id: userId,
       session_id: getCurrentSessionId(),
     }),
   });
@@ -210,12 +255,13 @@ export async function sendChatMessageStream(
 ): Promise<void> {
   let hasStreamError = false;
   try {
+    const userId = resolveUserId();
     const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message,
-        user_id: DEFAULT_USER_ID,
+        user_id: userId,
         session_id: sessionId,
       }),
     });
@@ -270,9 +316,10 @@ export async function sendChatWithImageStream(
 ): Promise<void> {
   let hasStreamError = false;
   try {
+    const userId = resolveUserId();
     const formData = new FormData();
     formData.append("message", message);
-    formData.append("user_id", DEFAULT_USER_ID);
+    formData.append("user_id", userId);
     formData.append("session_id", sessionId);
 
     (images.currentRoomImages || []).forEach((file) => {
@@ -339,10 +386,11 @@ export async function analyzeFurnitureMatch(
   message: string;
   references?: Array<{ title: string; url: string; snippet?: string; source?: string }>;
 }> {
+  const userId = resolveUserId();
   const formData = new FormData();
   formData.append("image", image);
   formData.append("prompt", prompt);
-  formData.append("user_id", DEFAULT_USER_ID);
+  formData.append("user_id", userId);
   formData.append("session_id", sessionId);
 
   const response = await fetch(`${API_BASE_URL}/api/vision/furniture-match`, {
@@ -370,7 +418,8 @@ export async function fetchRenderJob(jobId: string): Promise<{
   message?: string;
   retryable: boolean;
 }> {
-  const response = await fetch(`${API_BASE_URL}/api/render-jobs/${jobId}?user_id=${DEFAULT_USER_ID}`);
+  const userId = resolveUserId();
+  const response = await fetch(`${API_BASE_URL}/api/render-jobs/${jobId}?user_id=${encodeURIComponent(userId)}`);
   if (!response.ok) {
     throw new Error("加载渲染任务失败");
   }
@@ -381,8 +430,9 @@ export async function requestRenderJob(
   sessionId: string,
   requestMessage = "请根据刚才的设计方案重新生成效果图。"
 ): Promise<{ job_id: string; status: string }> {
+  const userId = resolveUserId();
   const formData = new FormData();
-  formData.append("user_id", DEFAULT_USER_ID);
+  formData.append("user_id", userId);
   formData.append("request_message", requestMessage);
 
   const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/render`, {
@@ -397,8 +447,9 @@ export async function requestRenderJob(
 }
 
 export async function fetchRecommendedPrompts(limit = 6): Promise<string[]> {
+  const userId = resolveUserId();
   const response = await fetch(
-    `${API_BASE_URL}/api/sessions/recommended-prompts?user_id=${DEFAULT_USER_ID}&limit=${limit}`
+    `${API_BASE_URL}/api/sessions/recommended-prompts?user_id=${encodeURIComponent(userId)}&limit=${limit}`
   );
   if (!response.ok) {
     throw new Error("加载推荐问题失败");

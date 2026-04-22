@@ -1,4 +1,17 @@
+import { getCurrentUser } from "./auth";
+
 const SESSION_STORAGE_KEY = "lumiere-current-session-id";
+
+function getSessionStorageKey(): string {
+  if (typeof window === "undefined") {
+    return SESSION_STORAGE_KEY;
+  }
+  const email = (getCurrentUser()?.email || "").trim().toLowerCase();
+  if (!email) {
+    return SESSION_STORAGE_KEY;
+  }
+  return `${SESSION_STORAGE_KEY}:${email}`;
+}
 
 function createSessionId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -12,13 +25,14 @@ export function getCurrentSessionId(): string {
     return "main_session";
   }
 
-  const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  const storageKey = getSessionStorageKey();
+  const existing = window.localStorage.getItem(storageKey);
   if (existing) {
     return existing;
   }
 
   const sessionId = createSessionId();
-  window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  window.localStorage.setItem(storageKey, sessionId);
   return sessionId;
 }
 
@@ -26,7 +40,8 @@ export function setCurrentSessionId(sessionId: string): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  const storageKey = getSessionStorageKey();
+  window.localStorage.setItem(storageKey, sessionId);
 }
 
 export function createAndStoreSessionId(): string {
