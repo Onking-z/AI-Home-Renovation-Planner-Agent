@@ -44,6 +44,7 @@ def init_db() -> None:
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
                     image_filename TEXT,
+                    metadata_json TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 );
@@ -114,12 +115,33 @@ def init_db() -> None:
 
                 CREATE INDEX IF NOT EXISTS idx_three_d_jobs_session
                 ON three_d_jobs(session_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS floorplan_jobs (
+                    job_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    request_message TEXT,
+                    source_image TEXT,
+                    result_json TEXT,
+                    error_message TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_floorplan_jobs_session
+                ON floorplan_jobs(session_id, created_at);
                 """
             )
             columns = conn.execute("PRAGMA table_info(sessions)").fetchall()
             column_names = {row["name"] for row in columns}
             if "pinned" not in column_names:
                 conn.execute("ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+            message_columns = conn.execute("PRAGMA table_info(messages)").fetchall()
+            message_column_names = {row["name"] for row in message_columns}
+            if "metadata_json" not in message_column_names:
+                conn.execute("ALTER TABLE messages ADD COLUMN metadata_json TEXT")
             conn.commit()
         finally:
             conn.close()
@@ -180,17 +202,19 @@ def save_message(
     role: str,
     content: str,
     image_filename: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
 ) -> int:
     ensure_session(session_id=session_id, user_id=user_id, title=content[:80] or "新对话")
+    payload = json.dumps(metadata or {}, ensure_ascii=False)
     with _LOCK:
         conn = get_connection()
         try:
             cursor = conn.execute(
                 """
-                INSERT INTO messages (session_id, user_id, role, content, image_filename, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO messages (session_id, user_id, role, content, image_filename, metadata_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (session_id, user_id, role, content, image_filename, utc_now()),
+                (session_id, user_id, role, content, image_filename, payload, utc_now()),
             )
             conn.execute(
                 "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
@@ -198,6 +222,39 @@ def save_message(
             )
             conn.commit()
             return int(cursor.lastrowid)
+        finally:
+            conn.close()
+
+
+def update_message_metadata(
+    *,
+    message_id: int,
+    metadata: dict[str, Any],
+    content: Optional[str] = None,
+) -> None:
+    payload = json.dumps(metadata or {}, ensure_ascii=False)
+    with _LOCK:
+        conn = get_connection()
+        try:
+            if content is None:
+                conn.execute(
+                    """
+                    UPDATE messages
+                    SET metadata_json = ?
+                    WHERE id = ?
+                    """,
+                    (payload, message_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE messages
+                    SET content = ?, metadata_json = ?
+                    WHERE id = ?
+                    """,
+                    (content, payload, message_id),
+                )
+            conn.commit()
         finally:
             conn.close()
 
@@ -435,7 +492,7 @@ def get_messages(session_id: str, user_id: str) -> list[dict[str, Any]]:
         try:
             rows = conn.execute(
                 """
-                SELECT id, role, content, image_filename, created_at
+                SELECT id, role, content, image_filename, metadata_json, created_at
                 FROM messages
                 WHERE session_id = ? AND user_id = ?
                 ORDER BY created_at ASC, id ASC
@@ -445,6 +502,11 @@ def get_messages(session_id: str, user_id: str) -> list[dict[str, Any]]:
             messages = [dict(row) for row in rows]
             if not messages:
                 return messages
+
+            for message in messages:
+                metadata = json.loads(message.pop("metadata_json") or "{}")
+                if isinstance(metadata, dict):
+                    message.update(metadata)
 
             message_ids = [int(item["id"]) for item in messages]
             placeholders = ",".join(["?"] * len(message_ids))
@@ -495,6 +557,81 @@ def latest_asset(session_id: str, user_id: str, asset_type: str) -> Optional[dic
                 return None
             result = dict(row)
             result["metadata"] = json.loads(result.pop("metadata_json") or "{}")
+            return result
+        finally:
+            conn.close()
+
+
+def create_floorplan_job(
+    *,
+    job_id: str,
+    session_id: str,
+    user_id: str,
+    request_message: str,
+    source_image: str,
+    status: str = "pending",
+) -> None:
+    ensure_session(session_id=session_id, user_id=user_id)
+    now = utc_now()
+    with _LOCK:
+        conn = get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO floorplan_jobs (
+                    job_id, session_id, user_id, status, request_message,
+                    source_image, result_json, error_message, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                """,
+                (job_id, session_id, user_id, status, request_message, source_image, now, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def update_floorplan_job(
+    job_id: str,
+    *,
+    status: str,
+    result: Optional[dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    payload = json.dumps(result or {}, ensure_ascii=False) if result is not None else None
+    with _LOCK:
+        conn = get_connection()
+        try:
+            conn.execute(
+                """
+                UPDATE floorplan_jobs
+                SET status = ?, result_json = ?, error_message = ?, updated_at = ?
+                WHERE job_id = ?
+                """,
+                (status, payload, error_message, utc_now(), job_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_floorplan_job(job_id: str, user_id: str) -> Optional[dict[str, Any]]:
+    with _LOCK:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                """
+                SELECT job_id, session_id, user_id, status, request_message,
+                       source_image, result_json, error_message, created_at, updated_at
+                FROM floorplan_jobs
+                WHERE job_id = ? AND user_id = ?
+                """,
+                (job_id, user_id),
+            ).fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            result["result"] = json.loads(result.pop("result_json") or "{}")
             return result
         finally:
             conn.close()
@@ -635,6 +772,31 @@ def get_latest_3d_job_for_session(
                 LIMIT 1
                 """,
                 (session_id, user_id),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def get_latest_3d_job_for_source_image(
+    session_id: str,
+    user_id: str,
+    source_image: str,
+) -> Optional[dict[str, Any]]:
+    with _LOCK:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                """
+                SELECT job_id, session_id, user_id, status, source_image,
+                       external_task_id, result_filename, error_message,
+                       progress, created_at, updated_at
+                FROM three_d_jobs
+                WHERE session_id = ? AND user_id = ? AND source_image = ?
+                ORDER BY created_at DESC, job_id DESC
+                LIMIT 1
+                """,
+                (session_id, user_id, source_image),
             ).fetchone()
             return dict(row) if row else None
         finally:

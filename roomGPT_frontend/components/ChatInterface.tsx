@@ -5,12 +5,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   analyzeFurnitureMatch,
   fetch3DJobStatus,
+  fetchFloorplanJobStatus,
   fetchRecommendedPrompts,
   fetchRenderJob,
   fetchSessionMessages,
+  requestFloorplanAnalysis,
   requestRenderJob,
   sendChatMessageStream,
   sendChatWithImageStream,
+  startFloorplanGeneration,
+  updateFloorplanRooms,
 } from "../utils/api";
 import ChatMessageActions from "./ChatMessageActions";
 import QuickPrompts from "./QuickPrompts";
@@ -28,6 +32,7 @@ import { useToast } from "./Toast";
 import MarkdownRenderer from "./MarkdownRenderer";
 import ImageLightbox from "./ImageLightbox";
 import ModelViewer from "./ModelViewer";
+import FloorplanAnalysisCard from "./FloorplanAnalysisCard";
 
 interface ChatInterfaceProps {
   sessionId: string;
@@ -38,14 +43,14 @@ interface PendingImage {
   id: string;
   file: File;
   previewUrl: string;
-  kind: "general" | "current_room" | "inspiration" | "vision_match";
+  kind: "general" | "current_room" | "inspiration" | "vision_match" | "floorplan";
 }
 
 interface FailedDraft {
   content: string;
   uploads: Array<{
     file: File;
-    kind: "general" | "current_room" | "inspiration" | "vision_match";
+    kind: "general" | "current_room" | "inspiration" | "vision_match" | "floorplan";
   }>;
 }
 
@@ -55,6 +60,36 @@ type ReferenceLink = {
   snippet?: string;
   source?: string;
 };
+
+type FloorplanAnalysis = NonNullable<ChatMessage["floorplanAnalysis"]>;
+
+function mergeFloorplanAnalysis(
+  previous: ChatMessage["floorplanAnalysis"],
+  incoming: FloorplanAnalysis
+): FloorplanAnalysis {
+  if (!previous) return incoming;
+
+  const previousRoomsById = new Map((previous.rooms || []).map((room) => [room.id, room]));
+  const mergedRooms = (incoming.rooms || []).map((room) => {
+    const previousRoom = previousRoomsById.get(room.id);
+    if (!previousRoom) return room;
+
+    return {
+      ...previousRoom,
+      ...room,
+      dimensions: room.dimensions ?? previousRoom.dimensions,
+      userRequirements: room.userRequirements ?? previousRoom.userRequirements,
+      isUserEdited: room.isUserEdited ?? previousRoom.isUserEdited,
+      isUserCreated: room.isUserCreated ?? previousRoom.isUserCreated,
+    };
+  });
+
+  return {
+    ...previous,
+    ...incoming,
+    rooms: mergedRooms,
+  };
+}
 
 function generateFollowUpPrompts(content: string): string[] {
   const prompts = [
@@ -74,7 +109,7 @@ function generateFollowUpPrompts(content: string): string[] {
   return Array.from(new Set(prompts)).slice(0, 3);
 }
 
-function getAttachmentTone(kind?: "general" | "current_room" | "inspiration" | "vision_match") {
+function getAttachmentTone(kind?: "general" | "current_room" | "inspiration" | "vision_match" | "floorplan") {
   if (kind === "general") {
     return "bg-[#EDF3FB] text-[#4B6785] ring-1 ring-[#C7D6E8]/75";
   }
@@ -84,13 +119,17 @@ function getAttachmentTone(kind?: "general" | "current_room" | "inspiration" | "
   if (kind === "vision_match") {
     return "bg-[#EEF5F0] text-[#4C7560] ring-1 ring-[#B9D0C2]/70";
   }
+  if (kind === "floorplan") {
+    return "bg-[#F8F1E6] text-[#8C6A41] ring-1 ring-[#D7C1A1]/70";
+  }
   return "bg-white/18 text-white/95 ring-1 ring-white/18";
 }
 
-function getPendingImageLabel(kind: "general" | "current_room" | "inspiration" | "vision_match", index: number) {
+function getPendingImageLabel(kind: "general" | "current_room" | "inspiration" | "vision_match" | "floorplan", index: number) {
   if (kind === "general") return `图片 ${index + 1}`;
   if (kind === "current_room") return `原图 ${index + 1}`;
   if (kind === "inspiration") return `灵感图 ${index + 1}`;
+  if (kind === "floorplan") return `户型图 ${index + 1}`;
   return `识图 ${index + 1}`;
 }
 
@@ -101,9 +140,11 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
   const [isSending, setIsSending] = useState(false);
   const [showQuickScenes, setShowQuickScenes] = useState(false);
   const [showInspirationComposer, setShowInspirationComposer] = useState(false);
-  const [pendingUploadKind, setPendingUploadKind] = useState<"general" | "current_room" | "inspiration" | "vision_match">("general");
+  const [pendingUploadKind, setPendingUploadKind] = useState<"general" | "current_room" | "inspiration" | "vision_match" | "floorplan">("general");
   const [pendingRenderJobId, setPendingRenderJobId] = useState<string | null>(null);
   const [pending3DJobId, setPending3DJobId] = useState<string | null>(null);
+  const [pendingFloorplanJobId, setPendingFloorplanJobId] = useState<string | null>(null);
+  const [floorplanActiveRoomByJobId, setFloorplanActiveRoomByJobId] = useState<Record<string, string>>({});
   const [failedDraft, setFailedDraft] = useState<FailedDraft | null>(null);
   const [recommendedPrompts, setRecommendedPrompts] = useState<string[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -122,6 +163,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentRoomInputRef = useRef<HTMLInputElement>(null);
   const pendingImagesRef = useRef<PendingImage[]>([]);
+  const handledFloorplanToastJobsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     pendingImagesRef.current = pendingImages;
@@ -134,9 +176,35 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
   }, []);
 
   useEffect(() => {
+    setPending3DJobId(null);
+    setPendingFloorplanJobId(null);
+    setFloorplanActiveRoomByJobId({});
+    handledFloorplanToastJobsRef.current.clear();
     fetchSessionMessages(sessionId)
-      .then(setMessages)
-      .catch(() => setMessages([]));
+      .then((history) => {
+        setMessages(history);
+        const active3DJob = [...history]
+          .reverse()
+          .find((message) => message.threeDJobId && message.threeDStatus && message.threeDStatus !== "completed" && message.threeDStatus !== "failed");
+        const activeFloorplanJob = [...history]
+          .reverse()
+          .find(
+            (message) =>
+              message.floorplanJobId &&
+              message.floorplanStatus &&
+              message.floorplanStatus !== "completed" &&
+              message.floorplanStatus !== "failed" &&
+              message.floorplanStatus !== "analysis_completed" &&
+              message.floorplanStatus !== "generation_completed"
+          );
+        setPending3DJobId(active3DJob?.threeDJobId || null);
+        setPendingFloorplanJobId(activeFloorplanJob?.floorplanJobId || null);
+      })
+      .catch(() => {
+        setMessages([]);
+        setPending3DJobId(null);
+        setPendingFloorplanJobId(null);
+      });
     fetchRecommendedPrompts(6)
       .then(setRecommendedPrompts)
       .catch(() => setRecommendedPrompts([]));
@@ -275,6 +343,110 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
   }, [pending3DJobId, showToast]);
 
   useEffect(() => {
+    if (!pendingFloorplanJobId) return;
+
+    const poll = window.setInterval(async () => {
+      try {
+        const job = await fetchFloorplanJobStatus(pendingFloorplanJobId);
+        if (job.status === "analysis_completed" && job.analysis) {
+          const analysis = job.analysis;
+          setPendingFloorplanJobId(null);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.floorplanJobId === job.job_id
+                ? {
+                    ...msg,
+                    floorplanStatus: "analysis_completed" as const,
+                    floorplanAnalysis: mergeFloorplanAnalysis(msg.floorplanAnalysis, analysis),
+                    content: analysis.summary || "户型图分析已完成，请先校对房间信息，再开始生成效果图。",
+                  }
+                : msg
+            )
+          );
+          setAgentStatuses((prev) =>
+            prev.map((agent) =>
+              agent.agentName === "VisualAssessor"
+                ? { ...agent, status: "completed", message: "户型识别完成" }
+                : agent
+            )
+          );
+          if (!handledFloorplanToastJobsRef.current.has(job.job_id)) {
+            handledFloorplanToastJobsRef.current.add(job.job_id);
+            showToast("户型图分析已完成", "success");
+          }
+        } else if ((job.status === "generation_pending" || job.status === "generation_processing" || job.status === "generation_completed") && job.analysis) {
+          const analysis = job.analysis;
+          if (job.status === "generation_completed") {
+            setPendingFloorplanJobId(null);
+          }
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.floorplanJobId === job.job_id
+                ? {
+                    ...msg,
+                    floorplanStatus: job.status as ChatMessage["floorplanStatus"],
+                    floorplanAnalysis: mergeFloorplanAnalysis(msg.floorplanAnalysis, analysis),
+                    content: analysis.summary || "效果图正在分批生成中。",
+                  }
+                : msg
+            )
+          );
+          if (job.status === "generation_completed" && !handledFloorplanToastJobsRef.current.has(`${job.job_id}-generation`)) {
+            handledFloorplanToastJobsRef.current.add(`${job.job_id}-generation`);
+            showToast("效果图已分批生成完成", "success");
+          }
+        } else if (job.status === "generation_failed") {
+          setPendingFloorplanJobId(null);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.floorplanJobId === job.job_id
+                ? {
+                    ...msg,
+                    floorplanStatus: "generation_failed" as const,
+                    floorplanAnalysis: job.analysis ? mergeFloorplanAnalysis(msg.floorplanAnalysis, job.analysis) : msg.floorplanAnalysis,
+                    content: job.message || "效果图生成失败，请稍后重试。",
+                  }
+                : msg
+            )
+          );
+          if (!handledFloorplanToastJobsRef.current.has(`${job.job_id}-generation-failed`)) {
+            handledFloorplanToastJobsRef.current.add(`${job.job_id}-generation-failed`);
+            showToast(job.message || "效果图生成失败", "error");
+          }
+        } else if (job.status === "failed") {
+          setPendingFloorplanJobId(null);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.floorplanJobId === job.job_id
+                ? {
+                    ...msg,
+                    floorplanStatus: "failed" as const,
+                    content: job.message || "户型图分析失败，请换一张更清晰的图再试。",
+                  }
+                : msg
+            )
+          );
+          setAgentStatuses((prev) =>
+            prev.map((agent) =>
+              agent.agentName === "VisualAssessor"
+                ? { ...agent, status: "error", message: job.message || "户型图分析失败" }
+                : agent
+            )
+          );
+          if (!handledFloorplanToastJobsRef.current.has(job.job_id)) {
+            handledFloorplanToastJobsRef.current.add(job.job_id);
+            showToast(job.message || "户型图分析失败", "error");
+          }
+        }
+      } catch {
+        // Ignore transient polling failures.
+      }
+    }, 3000);
+
+    return () => window.clearInterval(poll);
+  }, [pendingFloorplanJobId, showToast]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
@@ -303,10 +475,30 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
 
   const buildImageId = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
 
-  const appendSelectedImages = (files: File[], kind: "general" | "current_room" | "inspiration" | "vision_match") => {
+  const appendSelectedImages = (files: File[], kind: "general" | "current_room" | "inspiration" | "vision_match" | "floorplan") => {
     if (!files.length) return;
 
     setPendingImages((prev) => {
+      if (kind === "floorplan") {
+        const nonFloorplan = prev.filter((image) => {
+          if (image.kind === "floorplan") {
+            URL.revokeObjectURL(image.previewUrl);
+            return false;
+          }
+          return true;
+        });
+        const file = files[0];
+        return [
+          ...nonFloorplan,
+          {
+            id: `${kind}-${buildImageId(file)}`,
+            file,
+            previewUrl: URL.createObjectURL(file),
+            kind,
+          },
+        ];
+      }
+
       const existingIds = new Set(prev.map((image) => image.id));
       const additions: PendingImage[] = [];
 
@@ -359,7 +551,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
     customMessage?: string,
     customUploads?: Array<{
       file: File;
-      kind: "general" | "current_room" | "inspiration" | "vision_match";
+      kind: "general" | "current_room" | "inspiration" | "vision_match" | "floorplan";
     }>
   ) => {
     const finalInput = (customMessage ?? input).trim();
@@ -375,6 +567,18 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
     const generalFiles = selectedUploads.filter((image) => image.kind === "general").map((image) => image.file);
     const currentRoomFiles = selectedUploads.filter((image) => image.kind === "current_room").map((image) => image.file);
     const inspirationFiles = selectedUploads.filter((image) => image.kind === "inspiration").map((image) => image.file);
+    const floorplanFiles = selectedUploads.filter((image) => image.kind === "floorplan").map((image) => image.file);
+
+    if (floorplanFiles.length > 0 && !finalInput) {
+      showToast("上传户型图后，请先输入你对生成效果的要求，再点击发送。", "info");
+      return;
+    }
+
+    if (floorplanFiles.length > 0 && selectedUploads.some((image) => image.kind !== "floorplan")) {
+      showToast("户型图分析请单独发送，不要与其他图片混合上传。", "info");
+      return;
+    }
+
     const outgoingAttachments = selectedUploads.map((image, idx) => ({
       id: `${image.kind}-${image.file.name}-${image.file.lastModified}-${idx}`,
       url: URL.createObjectURL(image.file),
@@ -383,6 +587,8 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
           ? `图片 ${generalFiles.indexOf(image.file) + 1}`
           : image.kind === "current_room"
           ? `原图 ${currentRoomFiles.indexOf(image.file) + 1}`
+          : image.kind === "floorplan"
+          ? "户型图"
           : `灵感图 ${inspirationFiles.indexOf(image.file) + 1}`,
       kind: image.kind,
     }));
@@ -396,7 +602,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
     };
 
     const tempMessageId = (Date.now() + 1).toString();
-    const assistantAgentName = selectedUploads.length ? "ProjectCoordinator" : "InfoAgent";
+    const assistantAgentName = floorplanFiles.length ? "VisualAssessor" : selectedUploads.length ? "ProjectCoordinator" : "InfoAgent";
 
     setMessages((prev) => [
       ...prev,
@@ -507,7 +713,42 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
     };
 
     try {
-      if (selectedUploads.length) {
+      if (floorplanFiles.length) {
+        setAgentStatuses((prev) =>
+          prev.map((agent) =>
+            agent.agentName === "VisualAssessor"
+              ? { ...agent, status: "processing", message: "正在识别户型图..." }
+              : agent.agentName === "ProjectCoordinator"
+              ? { ...agent, status: "processing", message: "正在整理你的生成要求..." }
+              : { ...agent, status: "idle", message: undefined }
+          )
+        );
+
+        updateMessage({
+          content: "已收到户型图和你的生成要求，正在分析户型并准备逐房间生成...",
+          floorplanStatus: "processing",
+          agentName: "VisualAssessor",
+        });
+
+        const result = await requestFloorplanAnalysis(userMessage.content, floorplanFiles[0], sessionId);
+        setPendingFloorplanJobId(result.job_id);
+        updateMessage({
+          floorplanJobId: result.job_id,
+          floorplanStatus: "pending" as const,
+          content: result.message || "户型图已上传，正在分析房间结构。",
+        });
+        setIsSending(false);
+        setAgentStatuses((prev) =>
+          prev.map((agent) =>
+            agent.status === "processing"
+              ? { ...agent, status: "completed", message: "任务已提交" }
+              : agent
+          )
+        );
+        setShowInspirationComposer(false);
+        setTimeout(() => setActiveAssistantMessageId(null), 1200);
+        showToast("户型图需求已提交", "success");
+      } else if (selectedUploads.length) {
         await sendChatWithImageStream(
           userMessage.content,
           {
@@ -562,8 +803,9 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
   const generalPendingImages = pendingImages.filter((image) => image.kind === "general");
   const currentRoomPendingImages = pendingImages.filter((image) => image.kind === "current_room");
   const inspirationPendingImages = pendingImages.filter((image) => image.kind === "inspiration");
+  const floorplanPendingImages = pendingImages.filter((image) => image.kind === "floorplan");
 
-  const triggerFilePicker = (kind: "general" | "current_room" | "inspiration" | "vision_match") => {
+  const triggerFilePicker = (kind: "general" | "current_room" | "inspiration" | "vision_match" | "floorplan") => {
     if (isSending) return;
     setPendingUploadKind(kind);
     currentRoomInputRef.current?.click();
@@ -661,6 +903,45 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
     }
   };
 
+  const handleSaveFloorplanRooms = async (messageId: string, jobId: string, rooms: NonNullable<ChatMessage["floorplanAnalysis"]>["rooms"]) => {
+    const response = await updateFloorplanRooms(jobId, rooms);
+    const analysis = response.analysis;
+    if (!analysis) return;
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId
+          ? {
+              ...msg,
+              floorplanAnalysis: mergeFloorplanAnalysis(msg.floorplanAnalysis, analysis),
+              floorplanStatus: "analysis_completed" as const,
+              content: analysis.summary || "房间信息已更新，请确认后开始生成效果图。",
+            }
+          : msg
+      )
+    );
+    showToast("房间信息已保存", "success");
+  };
+
+  const handleStartFloorplanGeneration = async (messageId: string, jobId: string, rooms: NonNullable<ChatMessage["floorplanAnalysis"]>["rooms"]) => {
+    const response = await startFloorplanGeneration(jobId, rooms);
+    setPendingFloorplanJobId(jobId);
+    const analysis = response.analysis;
+    if (!analysis) return;
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId
+          ? {
+              ...msg,
+              floorplanAnalysis: mergeFloorplanAnalysis(msg.floorplanAnalysis, analysis),
+              floorplanStatus: "generation_pending" as const,
+              content: analysis.summary || "已开始分批生成效果图。",
+            }
+          : msg
+      )
+    );
+    showToast("已开始分批生成效果图", "success");
+  };
+
   return (
     <div className="flex h-full flex-col font-body">
       {/* 顶部操作栏 */}
@@ -708,7 +989,7 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
               className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"} mb-2`}
             >
               <div
-                className={`group min-w-0 max-w-[70%] ${
+                className={`group min-w-0 ${message.floorplanAnalysis ? "max-w-[92%]" : "max-w-[70%]"} ${
                   message.role === "user"
                     ? "message-user"
                     : "message-assistant"
@@ -786,6 +1067,49 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
                         className="rounded-2xl w-full max-w-md cursor-zoom-in shadow-soft transition-transform duration-300 hover:scale-[1.02]"
                       />
                     </button>
+                  </div>
+                )}
+
+                {message.floorplanAnalysis && (
+                  <FloorplanAnalysisCard
+                    analysis={message.floorplanAnalysis}
+                    activeRoomId={message.floorplanJobId ? floorplanActiveRoomByJobId[message.floorplanJobId] : undefined}
+                    onActiveRoomChange={
+                      message.floorplanJobId
+                        ? (roomId) =>
+                            setFloorplanActiveRoomByJobId((prev) => ({
+                              ...prev,
+                              [message.floorplanJobId!]: roomId,
+                            }))
+                        : undefined
+                    }
+                    onPreviewImage={(url, title) => {
+                      setPreviewImageUrl(url);
+                      setPreviewTitle(title);
+                    }}
+                    onSaveRooms={
+                      message.floorplanJobId
+                        ? async (rooms) => handleSaveFloorplanRooms(message.id, message.floorplanJobId!, rooms)
+                        : undefined
+                    }
+                    onStartGeneration={
+                      message.floorplanJobId
+                        ? async (rooms) => handleStartFloorplanGeneration(message.id, message.floorplanJobId!, rooms)
+                        : undefined
+                    }
+                    isBusy={pendingFloorplanJobId === message.floorplanJobId}
+                  />
+                )}
+
+                {message.floorplanStatus === "pending" && !message.floorplanAnalysis && (
+                  <div className="mt-3 rounded-2xl border border-[#D7C1A1]/40 bg-[#FCF7EF] px-4 py-3 text-xs text-[#7A5E3A]">
+                    户型图正在识别与拆分中，分析完成后会先进入户型校对阶段。
+                  </div>
+                )}
+
+                {message.floorplanStatus === "failed" && !message.floorplanAnalysis && (
+                  <div className="mt-3 rounded-2xl border border-red-200/60 bg-red-50/70 px-4 py-3 text-xs text-red-600">
+                    户型图分析失败，请上传更清晰的户型图后重试。
                   </div>
                 )}
 
@@ -965,8 +1289,52 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
         </div>
       )}
 
-      {(generalPendingImages.length > 0 || showInspirationComposer) && (
+      {(generalPendingImages.length > 0 || floorplanPendingImages.length > 0 || showInspirationComposer) && (
       <div className="space-y-2 px-4 pb-2">
+          {floorplanPendingImages.length > 0 && (
+            <div className="rounded-2xl border border-[#D7C1A1]/60 bg-[#FCF5EB] px-3 py-3 shadow-sm">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-[#7A5E3A]">户型图待分析</div>
+                  <div className="text-xs text-[#8F775B]">先输入你希望的风格、功能和重点要求，再点击发送。</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {floorplanPendingImages.map((image, index) => (
+                  <div
+                    key={image.id}
+                    className="relative inline-flex max-w-[260px] items-center gap-2 rounded-full border border-[#D7C1A1]/70 bg-white/80 px-2.5 py-1.5 shadow-sm"
+                  >
+                    <button
+                      type="button"
+                      className="flex items-center gap-2"
+                      onClick={() => {
+                        setPreviewImageUrl(image.previewUrl);
+                        setPreviewTitle(getPendingImageLabel("floorplan", index));
+                      }}
+                    >
+                      <img
+                        src={image.previewUrl}
+                        alt={getPendingImageLabel("floorplan", index)}
+                        className="h-7 w-7 rounded-full object-cover ring-1 ring-[#D7C1A1]/70"
+                      />
+                      <span className="truncate text-xs font-medium text-[#7A5E3A]">
+                        {getPendingImageLabel("floorplan", index)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeSelectedImage(image.id)}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#F5EBDD] text-[11px] text-[#8C6A41] transition hover:bg-[#EBDAC2]"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {generalPendingImages.length > 0 && (
             <div>
               <div className="mb-1 text-[11px] font-medium text-[#4B6785]">已上传图片</div>
@@ -1153,6 +1521,20 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
                 }
                 return;
               }
+              if (pendingUploadKind === "floorplan") {
+                if (files.length > 1) {
+                  showToast("户型图分析一次只支持 1 张图片，已使用第一张。", "info");
+                }
+                appendSelectedImages([files[0]], "floorplan");
+                if (!input.trim()) {
+                  setInput("请根据这张户型图生成方案，我的要求是：");
+                }
+                showToast("户型图已加入待分析区，请先输入你的要求再发送。", "info");
+                if (currentRoomInputRef.current) {
+                  currentRoomInputRef.current.value = "";
+                }
+                return;
+              }
               appendSelectedImages(files, pendingUploadKind);
             }}
             accept="image/*"
@@ -1173,6 +1555,19 @@ export default function ChatInterface({ sessionId, onError }: ChatInterfaceProps
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21.44 11.05l-8.49 8.49a5.5 5.5 0 01-7.78-7.78l9.2-9.19a3.5 3.5 0 114.95 4.95l-9.19 9.2a1.5 1.5 0 01-2.12-2.13l8.49-8.48" />
                 </svg>
                 图像上传
+              </button>
+              <button
+                type="button"
+                onClick={() => triggerFilePicker("floorplan")}
+                disabled={isSending}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-medium text-[#8C6A41] transition hover:bg-[#F5EBDD] disabled:opacity-60"
+              >
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h18v14H3z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 9h8" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 13h5" />
+                </svg>
+                户型图分析
               </button>
               <button
                 type="button"
